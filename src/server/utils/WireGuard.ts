@@ -7,6 +7,7 @@ import { mergeClientStatuses } from '#server/utils/clientStatus';
 import { OLD_ENV, WG_ENV } from '#server/utils/config';
 import { firewall } from '#server/utils/firewall';
 import { encodeQRCode } from '#server/utils/qr';
+import { router } from '#server/utils/routing';
 import type { ID } from '#server/utils/types';
 import { wg } from '#server/utils/wgHelper';
 import { setIntervalImmediately } from '#shared/utils/time';
@@ -27,6 +28,7 @@ class WireGuard {
     await this.#saveWireguardConfig(wgInterface);
     await this.#syncWireguardConfig(wgInterface);
     await this.#applyFirewallRules(wgInterface);
+    await router.apply();
   }
 
   /**
@@ -238,6 +240,10 @@ class WireGuard {
     await this.#applyFirewallRules(wgInterface);
     WG_DEBUG('Firewall rules applied successfully.');
 
+    WG_DEBUG('Starting policy routing...');
+    await router.Startup();
+    WG_DEBUG('Policy routing started successfully.');
+
     WG_DEBUG('Starting Cron Job...');
     await this.startCronJob();
     WG_DEBUG('Cron Job started successfully.');
@@ -256,6 +262,7 @@ class WireGuard {
   // Shutdown wireguard
   async Shutdown() {
     const wgInterface = await Database.interfaces.get();
+    await router.Shutdown();
     await wg.down(wgInterface.name).catch(() => {});
   }
 

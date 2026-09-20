@@ -1,0 +1,1 @@
+ALTER TABLE `gateways_table` ADD `unavailable_action` text DEFAULT 'block' NOT NULL;

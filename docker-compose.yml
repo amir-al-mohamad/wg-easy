@@ -8,6 +8,11 @@ services:
     #  - PORT=51821
     #  - HOST=0.0.0.0
     #  - INSECURE=false
+    #  Policy routing: host ports inbound forwards may use, as ports and
+    #  ranges. Has to match what is published under `ports` below; set it
+    #  empty when nothing is, so the routing page refuses forwards instead of
+    #  offering the default 34000-34100.
+    #  - ROUTER_FORWARD_PORTS=34000-34100, 25565
 
     image: ghcr.io/wg-easy/wg-easy:15
     container_name: wg-easy
@@ -21,6 +26,13 @@ services:
     ports:
       - "51820:51820/udp"
       - "51821:51821/tcp"
+      # Policy routing: the ports inbound forwards may use, together with
+      # ROUTER_FORWARD_PORTS above. Keep them as few as you can: with Docker's
+      # userland proxy (the default) every published port runs its own helper
+      # process. Changing them means recreating the container.
+      # - "34000-34100:34000-34100/tcp"
+      # - "34000-34100:34000-34100/udp"
+      # - "25565:25565/tcp"
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
@@ -32,6 +44,28 @@ services:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv6.conf.all.forwarding=1
       - net.ipv6.conf.default.forwarding=1
+
+  # Policy routing: an upstream VPN to send client traffic through. It has to
+  # join wg-easy's network namespace; that is the only way its interface
+  # becomes visible to, and routable by, wg-easy. Started any other way the
+  # tunnel comes up fine and never appears in the gateway list.
+  #
+  # Anything presenting a network interface works. A bare proxy protocol does
+  # not: Xray serving VLESS over SOCKS creates no interface, so it needs a TUN
+  # front end such as sing-box, shown here.
+  #
+  # sing-box:
+  #   image: ghcr.io/sagernet/sing-box
+  #   container_name: sing-box
+  #   network_mode: "container:wg-easy"
+  #   cap_add:
+  #     - NET_ADMIN
+  #   volumes:
+  #     - ./sing-box.json:/etc/sing-box/config.json:ro
+  #   command: run -c /etc/sing-box/config.json
+  #   depends_on:
+  #     - wg-easy
+  #   restart: unless-stopped
 
 networks:
   wg:

@@ -68,7 +68,14 @@ RUN apk add --no-cache \
     kmod \
     iptables-legacy \
     wireguard-go \
-    wireguard-tools
+    wireguard-tools \
+    # Policy routing: named address sets matched by iptables, and the full `ip`
+    # from iproute2, as busybox's applet cannot manage rules or routing tables.
+    ipset \
+    iproute2 \
+    # Ends the connections of a port forward when the forward is removed;
+    # without it they run on until they close by themselves.
+    conntrack-tools
 
 RUN mkdir -p /etc/amnezia
 RUN ln -s /etc/wireguard /etc/amnezia/amneziawg
@@ -78,7 +85,7 @@ RUN update-alternatives --install /usr/sbin/iptables iptables /usr/sbin/iptables
 RUN update-alternatives --install /usr/sbin/ip6tables ip6tables /usr/sbin/ip6tables-legacy 10 --slave /usr/sbin/ip6tables-restore ip6tables-restore /usr/sbin/ip6tables-legacy-restore --slave /usr/sbin/ip6tables-save ip6tables-save /usr/sbin/ip6tables-legacy-save
 
 # Set Environment
-ENV DEBUG=Server,WireGuard,Database,CMD,Firewall
+ENV DEBUG=Server,WireGuard,Database,CMD,Firewall,Router
 ENV PORT=51821
 ENV HOST=0.0.0.0
 ENV INSECURE=false

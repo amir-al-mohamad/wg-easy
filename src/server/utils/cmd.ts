@@ -6,7 +6,9 @@ const CMD_DEBUG = createDebug('CMD');
 
 export function exec(
   cmd: string,
-  { log }: { log: boolean | string } = { log: true }
+  { log, maxBuffer }: { log: boolean | string; maxBuffer?: number } = {
+    log: true,
+  }
 ) {
   if (typeof log === 'string') {
     CMD_DEBUG(`$ ${log}`);
@@ -23,6 +25,7 @@ export function exec(
       cmd,
       {
         shell: 'bash',
+        maxBuffer,
       },
       (err, stdout) => {
         if (err) return reject(err);

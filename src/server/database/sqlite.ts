@@ -11,6 +11,10 @@ import { InterfaceService } from '#db/repositories/interface/service';
 import { HooksService } from '#db/repositories/hooks/service';
 import { OneTimeLinkService } from '#db/repositories/oneTimeLink/service';
 import { ClientService } from '#db/repositories/client/service';
+import { GatewayService } from '#db/repositories/gateway/service';
+import { RoutingRuleService } from '#db/repositories/routingRule/service';
+import { RoutingConfigService } from '#db/repositories/routingConfig/service';
+import { PortForwardService } from '#db/repositories/portForward/service';
 import * as schema from '#db/schema';
 import { WG_ENV, WG_INITIAL_ENV } from '#server/utils/config';
 
@@ -43,6 +47,10 @@ class DBService {
   interfaces: InterfaceService;
   hooks: HooksService;
   oneTimeLinks: OneTimeLinkService;
+  gateways: GatewayService;
+  routingRules: RoutingRuleService;
+  routingConfig: RoutingConfigService;
+  portForwards: PortForwardService;
 
   constructor(db: DBType) {
     this.clients = new ClientService(db);
@@ -52,6 +60,10 @@ class DBService {
     this.interfaces = new InterfaceService(db);
     this.hooks = new HooksService(db);
     this.oneTimeLinks = new OneTimeLinkService(db);
+    this.gateways = new GatewayService(db);
+    this.routingRules = new RoutingRuleService(db);
+    this.routingConfig = new RoutingConfigService(db);
+    this.portForwards = new PortForwardService(db);
   }
 }
 

@@ -1,8 +1,12 @@
 // ! Do not use Path Aliases in this or any of these files
 export * from './repositories/client/schema';
+export * from './repositories/gateway/schema';
 export * from './repositories/general/schema';
 export * from './repositories/hooks/schema';
 export * from './repositories/interface/schema';
 export * from './repositories/oneTimeLink/schema';
+export * from './repositories/portForward/schema';
+export * from './repositories/routingConfig/schema';
+export * from './repositories/routingRule/schema';
 export * from './repositories/user/schema';
 export * from './repositories/userConfig/schema';

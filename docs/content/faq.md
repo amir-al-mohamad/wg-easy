@@ -74,6 +74,24 @@ To resolve this issue, you can try the following steps:
      echo "ip6table_nat" | sudo tee -a /etc/modules
     ```
 
+## Policy routing is not available on this host
+
+The routing page reports this when `ipset`, `ip rule` or the iptables `mangle`
+table cannot be used. All three are provided by kernel modules that most
+distribution kernels ship but do not always load:
+
+```shell
+sudo modprobe ip_set ip_set_hash_net xt_set iptable_mangle ip6table_mangle
+```
+
+To load them on boot, add each name to `/etc/modules`:
+
+```shell
+printf '%s\n' ip_set ip_set_hash_net xt_set iptable_mangle ip6table_mangle | sudo tee -a /etc/modules
+```
+
+`ip6table_mangle` is only needed with IPv6 enabled.
+
 ## can't initialize iptables table `filter': Permission denied
 
 This error indicates that the `filter` table in `iptables` cannot be initialized due to permission issues. This can happen if you are not running the command with sufficient privileges.

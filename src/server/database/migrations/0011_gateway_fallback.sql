@@ -1,0 +1,1 @@
+ALTER TABLE `gateways_table` ADD `fallback_gateway_id` integer REFERENCES gateways_table(id);

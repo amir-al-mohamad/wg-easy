@@ -4,14 +4,17 @@ title: Optional Configuration
 
 You can set these environment variables to configure the container. They are not required, but can be useful in some cases.
 
-| Env                     | Default   | Example                     | Description                                                     |
-| ----------------------- | --------- | --------------------------- | --------------------------------------------------------------- |
-| `PORT`                  | `51821`   | `6789`                      | TCP port for Web UI.                                            |
-| `HOST`                  | `0.0.0.0` | `localhost`                 | IP address web UI binds to.                                     |
-| `INSECURE`              | `false`   | `true`                      | If access over http is allowed                                  |
-| `DISABLE_IPV6`          | `false`   | `true`                      | If IPv6 support should be disabled                              |
-| `DISABLE_VERSION_CHECK` | `false`   | `true`                      | If wg-easy should check for new updates                         |
-| `TRUSTED_PROXIES`       |           | `172.18.0.2,fd00:1234::/64` | Proxy IP addresses or CIDRs allowed to forward request metadata |
+| Env                         | Default       | Example                     | Description                                                                           |
+| --------------------------- | ------------- | --------------------------- | ------------------------------------------------------------------------------------- |
+| `PORT`                      | `51821`       | `6789`                      | TCP port for Web UI.                                                                  |
+| `HOST`                      | `0.0.0.0`     | `localhost`                 | IP address web UI binds to.                                                           |
+| `INSECURE`                  | `false`       | `true`                      | If access over http is allowed                                                        |
+| `DISABLE_IPV6`              | `false`       | `true`                      | If IPv6 support should be disabled                                                    |
+| `DISABLE_VERSION_CHECK`     | `false`       | `true`                      | If wg-easy should check for new updates                                               |
+| `TRUSTED_PROXIES`           |               | `172.18.0.2,fd00:1234::/64` | Proxy IP addresses or CIDRs allowed to forward request metadata                       |
+| `ROUTER_FORWARD_PORTS`      | `34000-34100` | `40000-40050, 25565`        | Ports and ranges available to inbound [port forwards](../routing.md), comma-separated; set it empty to publish none |
+| `ROUTER_FORWARD_PORT_START` |               | `40000`                     | First port of a range, the older way to declare one; adds to `ROUTER_FORWARD_PORTS`   |
+| `ROUTER_FORWARD_PORT_END`   |               | `40050`                     | Last port of that range                                                               |
 
 ## Trusted Proxies
 

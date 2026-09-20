@@ -64,6 +64,27 @@
       "when": 1788760134302,
       "tag": "0008_thin_patch",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789726218723,
+      "tag": "0009_policy_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789735188795,
+      "tag": "0010_gateway_unavailable_action",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789749318751,
+      "tag": "0011_gateway_fallback",
+      "breakpoints": true
     }
   ]
 }

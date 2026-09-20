@@ -58,6 +58,7 @@ const menuItems = computed(() => [
   { id: 'general', name: t('pages.admin.general') },
   { id: 'config', name: t('pages.admin.config') },
   { id: 'interface', name: t('pages.admin.interface') },
+  { id: 'routing', name: t('pages.admin.routing') },
   { id: 'hooks', name: t('pages.admin.hooks') },
 ]);
 
