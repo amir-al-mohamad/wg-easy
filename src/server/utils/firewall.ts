@@ -31,7 +31,67 @@ type FirewallClient = Pick<
   | 'allowedIps'
   | 'firewallIps'
   | 'enabled'
+  | 'isolated'
 >;
+
+/** Two clients that must not reach each other; see `clientIsolation`. */
+export type IsolationPair = { clientAId: number; clientBId: number };
+
+/**
+ * DROP rules keeping isolated clients apart, ahead of the allow rules. Both
+ * directions of a pair are blocked, since the chain only sees packets from
+ * the tunnel and replies would otherwise get through. A client isolated from
+ * everyone is cut off from the whole tunnel subnet, which covers clients
+ * added later; the server's own address is not forwarded and so unaffected.
+ */
+export function isolationRules(
+  wgInterface: Pick<InterfaceType, 'ipv4Cidr' | 'ipv6Cidr'>,
+  clients: readonly FirewallClient[],
+  pairs: readonly IsolationPair[],
+  enableIpv6: boolean
+): { v4: string[]; v6: string[] } {
+  const v4: string[] = [];
+  const v6: string[] = [];
+  const byId = new Map(
+    clients.filter((client) => client.enabled).map((c) => [c.id, c])
+  );
+
+  type Addresses = { ipv4: string; ipv6: string };
+  const drop = (rules: string[], from: string, to: string, comment: string) =>
+    rules.push(
+      `-A ${CHAIN_NAME} -s ${from} -d ${to} -m comment --comment "${comment}" -j DROP`
+    );
+  const apart = (a: Addresses, b: Addresses, comment: string) => {
+    drop(v4, a.ipv4, b.ipv4, comment);
+    drop(v4, b.ipv4, a.ipv4, comment);
+    if (enableIpv6) {
+      drop(v6, a.ipv6, b.ipv6, comment);
+      drop(v6, b.ipv6, a.ipv6, comment);
+    }
+  };
+  const addresses = (client: FirewallClient): Addresses => ({
+    ipv4: client.ipv4Address,
+    ipv6: client.ipv6Address,
+  });
+
+  for (const client of byId.values()) {
+    if (!client.isolated) continue;
+    apart(
+      addresses(client),
+      { ipv4: wgInterface.ipv4Cidr, ipv6: wgInterface.ipv6Cidr },
+      `isolated client ${client.id}`
+    );
+  }
+
+  for (const pair of pairs) {
+    const a = byId.get(pair.clientAId);
+    const b = byId.get(pair.clientBId);
+    if (!a || !b) continue;
+    apart(addresses(a), addresses(b), `isolation ${a.id} ${b.id}`);
+  }
+
+  return { v4, v6 };
+}
 
 /**
  * Sanitize a client identifier for use in an iptables comment.
@@ -247,7 +307,8 @@ export const firewall = {
     wgInterface: InterfaceType,
     clients: FirewallClient[],
     userConfig: UserConfigType,
-    enableIpv6: boolean
+    enableIpv6: boolean,
+    isolations: IsolationPair[] = []
   ): Promise<void> {
     if (!wgInterface.firewallEnabled) {
       FW_DEBUG('Firewall filtering disabled, removing any existing rules');
@@ -273,6 +334,20 @@ export const firewall = {
       // Flush existing rules
       await this.flushChain(enableIpv6);
 
+      // Isolation first: a DROP only means something ahead of the ACCEPTs
+      const isolation = isolationRules(
+        wgInterface,
+        clients,
+        isolations,
+        enableIpv6
+      );
+      for (const rule of isolation.v4) {
+        await exec(`iptables ${rule}`);
+      }
+      for (const rule of isolation.v6) {
+        await exec(`ip6tables ${rule}`);
+      }
+
       // Apply rules for each enabled client
       for (const client of clients) {
         if (!client.enabled) continue;
@@ -297,7 +372,13 @@ export const firewall = {
       if (rebuildQueued) {
         rebuildQueued = false;
         FW_DEBUG('Processing queued rebuild');
-        await this.rebuildRules(wgInterface, clients, userConfig, enableIpv6);
+        await this.rebuildRules(
+          wgInterface,
+          clients,
+          userConfig,
+          enableIpv6,
+          isolations
+        );
       }
     }
   },

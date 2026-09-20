@@ -69,6 +69,21 @@
             </FormHeading>
             <FormNullArrayField v-model="data.firewallIps" name="firewallIps" />
           </FormGroup>
+          <FormGroup v-if="globalStore.information?.firewallEnabled">
+            <FormHeading :description="$t('client.isolationDesc')">
+              {{ $t('client.isolation') }}
+            </FormHeading>
+            <FormSwitchField
+              id="isolated"
+              v-model="data.isolated"
+              :label="$t('client.isolated')"
+              :description="$t('client.isolatedDesc')"
+            />
+            <ClientsIsolationField
+              v-model="data.isolatedFrom"
+              :client-id="data.id"
+            />
+          </FormGroup>
           <FormGroup>
             <FormHeading :description="$t('client.dnsDesc')">
               {{ $t('general.dns') }}

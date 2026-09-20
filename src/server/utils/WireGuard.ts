@@ -37,11 +37,13 @@ class WireGuard {
   async #applyFirewallRules(wgInterface: InterfaceType) {
     const clients = await Database.clients.getAll();
     const userConfig = await Database.userConfigs.get();
+    const isolations = await Database.clients.getIsolations();
     await firewall.rebuildRules(
       wgInterface,
       clients,
       userConfig,
-      !WG_ENV.DISABLE_IPV6
+      !WG_ENV.DISABLE_IPV6,
+      isolations
     );
   }
 

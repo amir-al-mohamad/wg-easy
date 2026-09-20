@@ -85,6 +85,13 @@
       "when": 1789749318751,
       "tag": "0011_gateway_fallback",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789803872499,
+      "tag": "0012_client_isolation",
+      "breakpoints": true
     }
   ]
 }

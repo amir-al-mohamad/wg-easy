@@ -1,7 +1,7 @@
 import { eq, sql, or, like, and } from 'drizzle-orm';
 import { containsCidr, parseCidr } from 'cidr-tools';
 
-import { client } from './schema';
+import { client, clientIsolation } from './schema';
 import type {
   ClientCreateFromExistingType,
   ClientCreateType,
@@ -15,6 +15,32 @@ import type { ID } from '#server/utils/types';
 import { wg } from '#server/utils/wgHelper';
 import type { DBType } from '#db/sqlite';
 import { wgInterface, userConfig } from '#db/schema';
+
+type TxType = Parameters<Parameters<DBType['transaction']>[0]>[0];
+
+const involving = (id: ID) =>
+  or(eq(clientIsolation.clientAId, id), eq(clientIsolation.clientBId, id));
+
+/**
+ * Replace the isolation pairs `id` takes part in. Unknown ids and the client
+ * itself are dropped rather than left for the foreign key to fail the save.
+ */
+async function replaceIsolation(tx: TxType, id: ID, others: readonly number[]) {
+  const existing = await tx.select({ id: client.id }).from(client);
+  const known = new Set(existing.map((row) => row.id));
+
+  const pairs = [...new Set(others)]
+    .filter((other) => other !== id && known.has(other))
+    .map((other) => ({
+      clientAId: Math.min(id, other),
+      clientBId: Math.max(id, other),
+    }));
+
+  await tx.delete(clientIsolation).where(involving(id));
+  if (pairs.length > 0) {
+    await tx.insert(clientIsolation).values(pairs);
+  }
+}
 
 function createPreparedStatement(db: DBType) {
   return {
@@ -224,7 +250,24 @@ export class ClientService {
     return this.#statements.delete.execute({ id });
   }
 
-  update(id: ID, data: UpdateClientType) {
+  /** Every pair of clients that must not reach each other. */
+  getIsolations() {
+    return this.#db.select().from(clientIsolation).execute();
+  }
+
+  /** The clients this one is isolated from, whichever side of the pair it is on. */
+  async getIsolatedFrom(id: ID) {
+    const pairs = await this.#db
+      .select()
+      .from(clientIsolation)
+      .where(involving(id))
+      .execute();
+    return pairs.map((pair) =>
+      pair.clientAId === id ? pair.clientBId : pair.clientAId
+    );
+  }
+
+  update(id: ID, data: UpdateClientType, isolatedFrom?: readonly number[]) {
     return this.#db.transaction(async (tx) => {
       const clientInterface = await tx.query.wgInterface
         .findFirst({
@@ -245,6 +288,9 @@ export class ClientService {
       }
 
       await tx.update(client).set(data).where(eq(client.id, id)).execute();
+      if (isolatedFrom) {
+        await replaceIsolation(tx, id, isolatedFrom);
+      }
     });
   }
 

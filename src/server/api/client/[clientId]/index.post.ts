@@ -6,7 +6,7 @@ import { definePermissionEventHandler } from '#server/utils/handler';
 import { validateZod } from '#server/utils/types';
 import {
   ClientGetSchema,
-  ClientUpdateSchema,
+  ClientUpdateBodySchema,
 } from '#db/repositories/client/types';
 
 export default definePermissionEventHandler(
@@ -18,15 +18,15 @@ export default definePermissionEventHandler(
       validateZod(ClientGetSchema, event)
     );
 
-    const data = await readValidatedBody(
+    const { isolatedFrom, ...data } = await readValidatedBody(
       event,
-      validateZod(ClientUpdateSchema, event)
+      validateZod(ClientUpdateBodySchema, event)
     );
 
     const client = await Database.clients.get(clientId);
     checkPermissions(client);
 
-    await Database.clients.update(clientId, data);
+    await Database.clients.update(clientId, data, isolatedFrom);
     await WireGuard.saveConfig();
 
     return { success: true };

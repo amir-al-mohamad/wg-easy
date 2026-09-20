@@ -74,6 +74,15 @@ To allow clients to reach the VPN server itself (e.g. for DNS), include the serv
 - Allow only web browsing: `0.0.0.0/0:80, 0.0.0.0/0:443, [::/0]:80, [::/0]:443`
 - Block internet, allow LAN: Leave "Allowed IPs" as `0.0.0.0/0, ::/0` but set Firewall IPs to `10.0.0.0/8, 192.168.0.0/16`
 
+## Isolation
+
+Part of the per-client firewall, so it takes effect only while **Per-Client Firewall** is enabled.
+
+- **Isolate from all clients**: this client cannot reach any other client on the tunnel, and none can reach it, including clients added later. The server itself and the internet are unaffected.
+- **Isolate from these clients**: pick specific clients instead. Isolation is symmetric: choosing B on A's page also keeps B from reaching A, and shows up on B's page.
+
+Isolation is enforced ahead of the allowed-IP rules, so listing a client's address under Firewall Allowed IPs does not override it.
+
 ## Server Allowed IPs
 
 Which IPs will be routed to the client.

@@ -91,6 +91,7 @@ export const ClientUpdateSchema = schemaForType<UpdateClientType>()(
   z.object({
     name: name,
     enabled: EnabledSchema,
+    isolated: z.boolean({ message: t('zod.client.isolated') }),
     expiresAt: expiresAt,
     ipv4Address: address4,
     ipv6Address: address6,
@@ -128,6 +129,18 @@ const clientId = z.coerce.number({ message: t('zod.client.id') });
 export const ClientGetSchema = z.object({
   clientId: clientId,
 });
+
+/**
+ * The update body: the client's own columns, plus the clients it is isolated
+ * from, a relation rather than a column and so kept out of the row update.
+ */
+export const ClientUpdateBodySchema = ClientUpdateSchema.extend({
+  isolatedFrom: z
+    .array(clientId, { message: t('zod.client.isolatedFrom') })
+    .default([]),
+});
+
+export type ClientUpdateBodyType = z.infer<typeof ClientUpdateBodySchema>;
 
 export type ClientCreateFromExistingType = Pick<
   ClientType,

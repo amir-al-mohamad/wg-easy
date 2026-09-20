@@ -1,5 +1,11 @@
 import { sql, relations } from 'drizzle-orm';
-import { int, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  int,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 import { wgInterface } from '../interface/schema';
 import { oneTimeLink } from '../oneTimeLink/schema';
@@ -64,6 +70,12 @@ export const client = sqliteTable(
     dns: text({ mode: 'json' }).$type<string[]>(),
     serverEndpoint: text('server_endpoint'),
     enabled: int({ mode: 'boolean' }).notNull(),
+    /**
+     * Cut off from every other client on the tunnel and they from it; the
+     * server and the internet are unaffected. Enforced by the per-client
+     * firewall, so only while that is on. Pairs go in `clientIsolation`.
+     */
+    isolated: int({ mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at')
       .notNull()
       .default(sql`(CURRENT_TIMESTAMP)`),
@@ -94,3 +106,28 @@ export const clientsRelations = relations(client, ({ one }) => ({
     references: [wgInterface.name],
   }),
 }));
+
+/**
+ * Pairs of clients that must not reach each other. Stored once per pair,
+ * lower id first: isolation is symmetric, since the firewall chain only sees
+ * packets from the tunnel and blocking one direction would still let replies
+ * through.
+ */
+export const clientIsolation = sqliteTable(
+  'client_isolations_table',
+  {
+    clientAId: int('client_a_id')
+      .notNull()
+      .references(() => client.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
+    clientBId: int('client_b_id')
+      .notNull()
+      .references(() => client.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
+  },
+  (table) => [primaryKey({ columns: [table.clientAId, table.clientBId] })]
+);

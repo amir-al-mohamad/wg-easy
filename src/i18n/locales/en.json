@@ -133,7 +133,14 @@
     "firewallIps": "Firewall Allowed IPs",
     "firewallIpsDesc": "Destination IPs/CIDRs this client can access (server-side enforcement). Leave empty to use Allowed IPs. Supports optional port and protocol filtering. See docs for syntax.",
     "downloadPng": "Download PNG",
-    "copyPng": "Copy PNG"
+    "copyPng": "Copy PNG",
+    "isolation": "Isolation",
+    "isolationDesc": "Which other clients on the tunnel this client must not see. The server and the internet are unaffected. Takes effect while the Per-Client Firewall is enabled.",
+    "isolated": "Isolate from all clients",
+    "isolatedDesc": "No other client on the tunnel can reach this one, and it cannot reach them, including clients added later.",
+    "isolatedFrom": "Isolate from these clients",
+    "isolatedFromDesc": "Works both ways: a chosen client stops seeing this one too, and shows it on its own page.",
+    "isolatedFromEmpty": "There are no other clients."
   },
   "dialog": {
     "change": "Change",
@@ -222,7 +229,9 @@
       "address6": "IPv6 Address",
       "serverAllowedIps": "Server Allowed IPs",
       "firewallIps": "Firewall Allowed IPs",
-      "firewallIpsInvalid": "Invalid firewall IP entry. See docs for supported syntax."
+      "firewallIpsInvalid": "Invalid firewall IP entry. See docs for supported syntax.",
+      "isolated": "Isolate from all clients",
+      "isolatedFrom": "Isolate from clients"
     },
     "user": {
       "username": "Username",

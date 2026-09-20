@@ -31,6 +31,7 @@ export default definePermissionEventHandler(
     return {
       ...result,
       endpoint: data?.endpoint,
+      isolatedFrom: await Database.clients.getIsolatedFrom(clientId),
     };
   }
 );
