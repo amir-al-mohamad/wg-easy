@@ -28,7 +28,9 @@ export function exec(
         maxBuffer,
       },
       (err, stdout) => {
-        if (err) return reject(err);
+        if (err) {
+          return reject(err);
+        }
         return resolve(String(stdout).trim());
       }
     );

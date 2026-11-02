@@ -1,26 +1,16 @@
-import { readValidatedBody } from 'h3';
+import { readValidatedBody } from 'nuxt/server';
 
-import Database from '#server/utils/Database';
-import { definePermissionEventHandler } from '#server/utils/handler';
-import { router } from '#server/utils/routing';
-import { assertDefaultGateway } from '#server/utils/routing/ruleChecks';
-import { validateZod } from '#server/utils/types';
+import * as routing from '#server/features/routing';
+import { defineAuthenticatedEventHandler } from '#server/utils/handler';
+import { validateZod } from '#server/http/validation';
 import { RoutingConfigUpdateSchema } from '#db/repositories/routingConfig/types';
 
-export default definePermissionEventHandler(
-  'admin',
-  'any',
-  async ({ event }) => {
-    const data = await readValidatedBody(
-      event,
-      validateZod(RoutingConfigUpdateSchema, event)
-    );
+export default defineAuthenticatedEventHandler(async ({ event, user }) => {
+  const data = await readValidatedBody(
+    event,
+    validateZod(RoutingConfigUpdateSchema, event)
+  );
 
-    await assertDefaultGateway(data);
-
-    await Database.routingConfig.update(data);
-    await router.apply();
-
-    return { success: true };
-  }
-);
+  await routing.updateConfig(user, data);
+  return { success: true };
+});

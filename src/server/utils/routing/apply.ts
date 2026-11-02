@@ -39,7 +39,8 @@ import {
 } from './plan';
 import type { InstalledRule, Plan, PlanForward, PlanRule } from './plan';
 
-import Database from '#server/utils/Database';
+import { getDatabase } from '#db';
+import type { Repositories } from '#db/store';
 import { exec } from '#server/utils/cmd';
 import { WG_ENV } from '#server/utils/config';
 import type { ApplyStatus } from '#shared/utils/routingTypes';
@@ -47,7 +48,7 @@ import type { ApplyStatus } from '#shared/utils/routingTypes';
 const ROUTER_DEBUG = createDebug('Router');
 
 type RuleWithRelations = Awaited<
-  ReturnType<typeof Database.routingRules.getAll>
+  ReturnType<Repositories['routingRules']['getAll']>
 >[number];
 
 /** How the last apply went, for the UI; the kernel is the only other place it shows. */
@@ -90,7 +91,9 @@ async function installedRules() {
 
       for (const line of output.split('\n')) {
         const match = RULE_LINE.exec(line.trim());
-        if (!match) continue;
+        if (!match) {
+          continue;
+        }
 
         const priority = Number(match[1]);
         if (priority < RULE_PRIORITY_MIN || priority > RULE_PRIORITY_MAX) {
@@ -127,14 +130,20 @@ async function syncSets(rules: readonly RuleWithRelations[]) {
     const present = await listAddresses(rule.id);
 
     for (const entry of present) {
-      if (entry.timeout !== 0) continue; // learned from DNS; let it expire
-      if (configured.has(entry.address)) continue;
+      if (entry.timeout !== 0) {
+        continue;
+      } // learned from DNS; let it expire
+      if (configured.has(entry.address)) {
+        continue;
+      }
       await removeAddress(rule.id, entry.address);
     }
 
     const existing = new Set(present.map((entry) => entry.address));
     for (const address of configured) {
-      if (existing.has(address)) continue;
+      if (existing.has(address)) {
+        continue;
+      }
       await addAddress(rule.id, address, 0);
     }
   }
@@ -171,7 +180,9 @@ function toPlanRule(rule: RuleWithRelations, fwmark: string): PlanRule | null {
 
   // Every named client is disabled, so the rule currently covers nobody.
   // Emitting it with no source match would silently widen it to everyone.
-  if (rule.clients.length > 0 && clients.length === 0) return null;
+  if (rule.clients.length > 0 && clients.length === 0) {
+    return null;
+  }
 
   return {
     id: rule.id,
@@ -269,7 +280,9 @@ function summarize(observed: readonly Observed[]) {
     .join(',');
 }
 
-type GatewayRow = Awaited<ReturnType<typeof Database.gateways.getAll>>[number];
+type GatewayRow = Awaited<
+  ReturnType<Repositories['gateways']['getAll']>
+>[number];
 
 /**
  * The gateways traffic falls through to when this one is unavailable, in
@@ -330,20 +343,22 @@ let installedForwards: PlanForward[] = [];
  */
 export async function presenceChanged() {
   // Without the tools nothing was ever applied, and nothing can be.
-  if (!status.available) return false;
+  if (!status.available) {
+    return false;
+  }
 
-  const gateways = await Database.gateways.getAll();
+  const gateways = await getDatabase().gateways.getAll();
   const active = gateways.filter((gateway) => gateway.enabled);
   return summarize(await observe(active)) !== seen;
 }
 
 async function rebuild() {
-  const wgInterface = await Database.interfaces.get();
+  const wgInterface = await getDatabase().interfaces.get();
   const [config, gateways, rules, forwards] = await Promise.all([
-    Database.routingConfig.get(),
-    Database.gateways.getAll(),
-    Database.routingRules.getAll(),
-    Database.portForwards.getAll(),
+    getDatabase().routingConfig.get(),
+    getDatabase().gateways.getAll(),
+    getDatabase().routingRules.getAll(),
+    getDatabase().portForwards.getAll(),
   ]);
 
   const enableIpv6 = !WG_ENV.DISABLE_IPV6;
@@ -430,7 +445,9 @@ async function rebuild() {
 
   const planRules: PlanRule[] = [];
   for (const rule of rules) {
-    if (!rule.enabled) continue;
+    if (!rule.enabled) {
+      continue;
+    }
 
     const fwmark = markFor(rule, gatewayMarks);
     if (!fwmark) {
@@ -441,7 +458,9 @@ async function rebuild() {
     }
 
     const planRule = toPlanRule(rule, fwmark);
-    if (planRule) planRules.push(planRule);
+    if (planRule) {
+      planRules.push(planRule);
+    }
   }
 
   const defaultFwmark =
@@ -495,7 +514,9 @@ async function rebuild() {
   // Sets are filled before the chains referencing them are rebuilt, so a rule
   // never matches an empty set; orphans go after, because the kernel refuses
   // to destroy a set a chain still references.
-  if (!isEmpty(plan)) await syncSets(rules);
+  if (!isEmpty(plan)) {
+    await syncSets(rules);
+  }
 
   const commands = buildPlan(plan);
   ROUTER_DEBUG(
@@ -540,7 +561,9 @@ async function rebuild() {
  * happened.
  */
 export async function applyRouting(): Promise<void> {
-  if (!status.available) return;
+  if (!status.available) {
+    return;
+  }
   await withRoutingLock(rebuildGuarded);
 }
 
@@ -567,7 +590,9 @@ export async function reconnectGateway(
   return withRoutingLock(async () => {
     await rehandshake(interfaceName);
     const answered = await awaitHandshake(interfaceName);
-    if (status.available) await rebuildGuarded();
+    if (status.available) {
+      await rebuildGuarded();
+    }
     return answered;
   });
 }

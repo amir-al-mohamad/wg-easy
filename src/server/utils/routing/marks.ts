@@ -72,7 +72,9 @@ export type Allocation = { fwmark: string; routeTable: number };
 
 function firstFree(min: number, max: number, used: Set<number>) {
   for (let candidate = min; candidate <= max; candidate++) {
-    if (!used.has(candidate)) return candidate;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
   }
   return null;
 }

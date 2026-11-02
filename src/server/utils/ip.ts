@@ -1,7 +1,7 @@
 import { Resolver } from 'node:dns/promises';
 import { networkInterfaces } from 'node:os';
 
-import { stringifyIp } from 'ip-bigint';
+import { normalizeIp, parseIp, stringifyIp } from 'ip-bigint';
 import type { parseCidr } from 'cidr-tools';
 
 import { cacheFunction } from '#server/utils/cache';
@@ -9,40 +9,64 @@ import type { ClientNextIpType } from '#db/repositories/client/types';
 
 type ParsedCidr = ReturnType<typeof parseCidr>;
 
-export function nextIP(
-  version: 4 | 6,
-  cidr: ParsedCidr,
-  clients: ClientNextIpType[]
-) {
+export function normalizeAddress(address: string) {
+  return normalizeIp(address, { hexify: true });
+}
+
+function gatewayNumber(cidr: ParsedCidr) {
+  const { number } = parseIp(cidr.ip);
+  // Network-address CIDRs keep the first host as the gateway for older setups.
+  return number === cidr.start ? cidr.start + 1n : number;
+}
+
+export function getGatewayAddress(cidr: ParsedCidr) {
+  return stringifyIp(
+    { number: gatewayNumber(cidr), version: cidr.version },
+    { hexify: true }
+  );
+}
+
+/** Match the allocation pool: reserve the network, server, and last address. */
+export function isClientAddress(address: string, cidr: ParsedCidr) {
+  const { number, version } = parseIp(address);
+  return (
+    version === cidr.version &&
+    number > cidr.start &&
+    number < cidr.end &&
+    number !== gatewayNumber(cidr)
+  );
+}
+
+export function nextIP(cidr: ParsedCidr, clients: ClientNextIpType[]) {
   const usedAddresses = new Set(
-    clients.map((client) => client[`ipv${version}Address`])
+    clients.map((client) =>
+      normalizeAddress(client[`ipv${cidr.version}Address`])
+    )
   );
 
-  return nextIPFromUsedAddresses(version, cidr, usedAddresses);
+  return nextIPFromUsedAddresses(cidr, usedAddresses);
 }
 
 export function nextIPFromUsedAddresses(
-  version: 4 | 6,
   cidr: ParsedCidr,
   usedAddresses: Set<string>
 ) {
-  let address;
-  for (let i = cidr.start + 2n; i <= cidr.end - 1n; i++) {
-    const currentIp = stringifyIp({ number: i, version: version });
+  const { version } = cidr;
+  const gateway = gatewayNumber(cidr);
+  for (let i = cidr.start + 1n; i < cidr.end; i++) {
+    if (i === gateway) {
+      continue;
+    }
+    const currentIp = stringifyIp({ number: i, version }, { hexify: true });
 
     if (!usedAddresses.has(currentIp)) {
-      address = currentIp;
-      break;
+      return currentIp;
     }
   }
 
-  if (!address) {
-    throw new Error('Maximum number of clients reached', {
-      cause: `IPv${version} Address Pool exhausted`,
-    });
-  }
-
-  return address;
+  throw new Error('Maximum number of clients reached', {
+    cause: `IPv${version} Address Pool exhausted`,
+  });
 }
 
 // use opendns to get public ip
@@ -96,7 +120,7 @@ async function getReverseDns(ip: string) {
   }
 }
 
-function getPrivateInformation() {
+function getPrivateInformation(interfaceName: string) {
   const interfaces = networkInterfaces();
 
   const interfaceNames = Object.keys(interfaces);
@@ -104,12 +128,14 @@ function getPrivateInformation() {
   const obj: Record<string, { ipv4: string[]; ipv6: string[] }> = {};
 
   for (const name of interfaceNames) {
-    if (name === 'wg0') {
+    if (name === interfaceName) {
       continue;
     }
 
     const iface = interfaces[name];
-    if (!iface) continue;
+    if (!iface) {
+      continue;
+    }
 
     for (const { family, internal, address } of iface) {
       if (internal) {
@@ -132,10 +158,10 @@ function getPrivateInformation() {
   return obj;
 }
 
-async function getIpInformation() {
+export async function getIpInformation(interfaceName: string) {
   const results = [];
 
-  const publicInfo = await getPublicInformation();
+  const publicInfo = await cachedGetPublicInformation();
   if (publicInfo.ipv4) {
     results.push({
       value: publicInfo.ipv4,
@@ -155,7 +181,7 @@ async function getIpInformation() {
     });
   }
 
-  const privateInfo = getPrivateInformation();
+  const privateInfo = getPrivateInformation(interfaceName);
   for (const [name, { ipv4, ipv6 }] of Object.entries(privateInfo)) {
     for (const ip of ipv4) {
       results.push({
@@ -175,9 +201,9 @@ async function getIpInformation() {
 }
 
 /**
- * Fetch IP Information
+ * Fetch public IP Information
  * @cache Response is cached for 15 min
  */
-export const cachedGetIpInformation = cacheFunction(getIpInformation, {
+const cachedGetPublicInformation = cacheFunction(getPublicInformation, {
   expiry: 15 * 60 * 1000,
 });

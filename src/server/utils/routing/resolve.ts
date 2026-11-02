@@ -4,7 +4,7 @@ import { createDebug } from 'obug';
 
 import { addAddress } from './ipset';
 
-import type { ID } from '#server/utils/types';
+import type { ID } from '#shared/contracts/validation';
 import { resolvableDomains } from '#shared/utils/pattern';
 
 const ROUTER_DEBUG = createDebug('Router');

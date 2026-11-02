@@ -8,7 +8,7 @@ import {
   EnabledSchema,
   safeStringRefine,
   t,
-} from '#server/utils/types';
+} from '#shared/contracts/validation';
 
 export type GatewayType = InferSelectModel<typeof gateway>;
 
@@ -18,19 +18,19 @@ export type GatewayType = InferSelectModel<typeof gateway>;
  * keeps a typo from ever reaching a command line.
  */
 export const InterfaceNameSchema = z
-  .string({ message: t('zod.gateway.interfaceName') })
-  .min(1, { message: t('zod.gateway.interfaceName') })
-  .max(15, { message: t('zod.gateway.interfaceName') })
+  .string({ message: t('validation.gateway.interfaceName') })
+  .min(1, { message: t('validation.gateway.interfaceName') })
+  .max(15, { message: t('validation.gateway.interfaceName') })
   .regex(/^[a-zA-Z0-9_.-]+$/, {
-    message: t('zod.gateway.interfaceNameInvalid'),
+    message: t('validation.gateway.interfaceNameInvalid'),
   })
   .pipe(safeStringRefine)
   .pipe(controlStringRefine);
 
 const GatewayNameSchema = z
-  .string({ message: t('zod.gateway.name') })
-  .min(1, { message: t('zod.gateway.name') })
-  .max(128, { message: t('zod.gateway.name') })
+  .string({ message: t('validation.gateway.name') })
+  .min(1, { message: t('validation.gateway.name') })
+  .max(128, { message: t('validation.gateway.name') })
   .pipe(safeStringRefine)
   .pipe(controlStringRefine);
 
@@ -42,7 +42,7 @@ export const GatewayCreateSchema = z.object({
 
 /** See the `unavailableAction` column for what each value means. */
 export const UnavailableActionSchema = z.enum(['block', 'direct', 'gateway'], {
-  message: t('zod.gateway.unavailableAction'),
+  message: t('validation.gateway.unavailableAction'),
 });
 
 export const GatewayUpdateSchema = z
@@ -51,7 +51,7 @@ export const GatewayUpdateSchema = z
     enabled: EnabledSchema,
     unavailableAction: UnavailableActionSchema,
     fallbackGatewayId: z
-      .number({ message: t('zod.gateway.fallbackGatewayId') })
+      .number({ message: t('validation.gateway.fallbackGatewayId') })
       .int()
       .positive()
       .nullable()
@@ -60,7 +60,7 @@ export const GatewayUpdateSchema = z
   .refine(
     (data) =>
       data.unavailableAction !== 'gateway' || data.fallbackGatewayId !== null,
-    { message: t('zod.gateway.fallbackGatewayIdInvalid') }
+    { message: t('validation.gateway.fallbackGatewayIdInvalid') }
   )
   // A fallback only means anything with the matching action; drop a stale one
   // rather than carry it around until it silently takes effect later.
@@ -73,6 +73,6 @@ export const GatewayUpdateSchema = z
 export type GatewayCreateType = z.infer<typeof GatewayCreateSchema>;
 export type GatewayUpdateType = z.infer<typeof GatewayUpdateSchema>;
 
-const gatewayId = z.coerce.number({ message: t('zod.gateway.id') });
+const gatewayId = z.coerce.number({ message: t('validation.gateway.id') });
 
 export const GatewayGetSchema = z.object({ gatewayId });

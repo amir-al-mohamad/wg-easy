@@ -3,7 +3,8 @@ import { consola } from 'consola';
 import { eq } from 'drizzle-orm';
 
 import { db, schema } from '#cli/db';
-import { wg } from '#server/utils/wgHelper';
+import { WG_ENV } from '#server/utils/config';
+import { generateClientConfig } from '#server/features/vpn/configuration';
 import { encodeQRCodeTerm } from '#server/utils/qr';
 
 export default defineCommand({
@@ -34,7 +35,7 @@ export default defineCommand({
     consola.info('Generating QR code for client...');
 
     const wgInterface = await db.query.wgInterface.findFirst({
-      where: eq(schema.wgInterface.name, 'wg0'),
+      where: eq(schema.wgInterface.name, WG_ENV.WG_INTERFACE),
     });
     if (!wgInterface) {
       consola.error('WireGuard interface not found');
@@ -42,7 +43,7 @@ export default defineCommand({
     }
 
     const userConfig = await db.query.userConfig.findFirst({
-      where: eq(schema.userConfig.id, 'wg0'),
+      where: eq(schema.userConfig.id, wgInterface.name),
     });
     if (!userConfig) {
       consola.error('User config not found');
@@ -57,14 +58,10 @@ export default defineCommand({
       return;
     }
 
-    const clientConfig = wg.generateClientConfig(
-      wgInterface,
-      userConfig,
-      client,
-      {
-        enableIpv6,
-      }
-    );
+    const clientConfig = generateClientConfig(wgInterface, userConfig, client, {
+      enableIpv6,
+      amnezia: WG_ENV.WG_EXECUTABLE === 'awg',
+    });
 
     consola.log(encodeQRCodeTerm(clientConfig));
   },

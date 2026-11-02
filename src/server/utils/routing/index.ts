@@ -8,12 +8,12 @@ import { withRoutingLock } from './lock';
 import { resolveRule } from './resolve';
 import { startScheduler, stopScheduler } from './scheduler';
 
-import type { ID } from '#server/utils/types';
+import type { ID } from '#shared/contracts/validation';
 
 /**
- * Policy routing's lifecycle, in the shape `WireGuard.ts` already drives the
- * client firewall with: brought up after the interface, re-applied whenever
- * the config is saved, torn down at shutdown.
+ * Policy routing's lifecycle, in the shape `features/vpn/lifecycle.ts`
+ * already drives the client firewall with: brought up after the interface,
+ * re-applied whenever the config is applied, torn down at shutdown.
  *
  * Re-applying on every save is what keeps the kernel in step with the client
  * list. Deleting a client cascades its rules and forwards in the database, and

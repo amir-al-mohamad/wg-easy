@@ -1,5 +1,5 @@
 <template>
-  <RLabel :for="props.for" class="font-medium">
+  <RLabel :for="props.for" class="text-sm font-medium text-muted">
     <slot />
   </RLabel>
 </template>

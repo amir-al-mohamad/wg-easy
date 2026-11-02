@@ -3,22 +3,19 @@
     <li
       v-for="entry in parsed"
       :key="entry.raw"
-      class="flex items-center gap-1.5 rounded px-2 py-1 text-sm"
+      class="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm"
       :class="
         entry.kind
-          ? 'bg-gray-100 dark:bg-neutral-600'
-          : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+          ? 'bg-surface-raised text-foreground'
+          : 'bg-accent/10 text-accent'
       "
     >
       <code>{{ entry.raw }}</code>
-      <span
-        class="text-xs"
-        :class="entry.kind ? 'text-gray-500 dark:text-neutral-400' : ''"
-      >
+      <span class="text-xs" :class="entry.kind ? 'text-subtle' : ''">
         {{
           entry.kind
-            ? $t(`routing.patternKind.${entry.kind}`)
-            : $t('routing.patternKind.invalid')
+            ? $t(`admin.routing.patternKind.${entry.kind}`)
+            : $t('admin.routing.patternKind.invalid')
         }}
       </span>
     </li>

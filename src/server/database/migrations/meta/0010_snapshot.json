@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3b568f03-33dd-41fa-884d-b7574f6e1466",
-  "prevId": "b308a24a-067c-4cdb-b277-36fbb0cb74de",
+  "id": "4f51ca3b-41f6-470d-a93e-8a1f84e84440",
+  "prevId": "209191ca-75c3-4821-93f5-255119b9a351",
   "tables": {
     "clients_table": {
       "name": "clients_table",
@@ -99,7 +99,7 @@
           "name": "pre_shared_key",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "expires_at": {
@@ -141,7 +141,7 @@
           "name": "mtu",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "j_c": {
@@ -339,105 +339,6 @@
           "onUpdate": "cascade"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "gateways_table": {
-      "name": "gateways_table",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "interface_name": {
-          "name": "interface_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "fwmark": {
-          "name": "fwmark",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "route_table": {
-          "name": "route_table",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "unavailable_action": {
-          "name": "unavailable_action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'block'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        }
-      },
-      "indexes": {
-        "gateways_table_interface_name_unique": {
-          "name": "gateways_table_interface_name_unique",
-          "columns": [
-            "interface_name"
-          ],
-          "isUnique": true
-        },
-        "gateways_table_fwmark_unique": {
-          "name": "gateways_table_fwmark_unique",
-          "columns": [
-            "fwmark"
-          ],
-          "isUnique": true
-        },
-        "gateways_table_route_table_unique": {
-          "name": "gateways_table_route_table_unique",
-          "columns": [
-            "route_table"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -649,7 +550,7 @@
           "name": "mtu",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "routing_table": {
@@ -955,363 +856,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "port_forwards_table": {
-      "name": "port_forwards_table",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "external_port": {
-          "name": "external_port",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "internal_port": {
-          "name": "internal_port",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "protocol": {
-          "name": "protocol",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        }
-      },
-      "indexes": {
-        "external_port_protocol_unique": {
-          "name": "external_port_protocol_unique",
-          "columns": [
-            "external_port",
-            "protocol"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "port_forwards_table_client_id_clients_table_id_fk": {
-          "name": "port_forwards_table_client_id_clients_table_id_fk",
-          "tableFrom": "port_forwards_table",
-          "tableTo": "clients_table",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "routing_config_table": {
-      "name": "routing_config_table",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
-        "default_action": {
-          "name": "default_action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'direct'"
-        },
-        "default_gateway_id": {
-          "name": "default_gateway_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "dns_upstreams": {
-          "name": "dns_upstreams",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "dns_intercept_enabled": {
-          "name": "dns_intercept_enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "routing_config_table_default_gateway_id_gateways_table_id_fk": {
-          "name": "routing_config_table_default_gateway_id_gateways_table_id_fk",
-          "tableFrom": "routing_config_table",
-          "tableTo": "gateways_table",
-          "columnsFrom": [
-            "default_gateway_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "routing_rules_table": {
-      "name": "routing_rules_table",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "gateway_id": {
-          "name": "gateway_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "patterns": {
-          "name": "patterns",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "addresses": {
-          "name": "addresses",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "auto_resolve": {
-          "name": "auto_resolve",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "routing_rules_table_gateway_id_gateways_table_id_fk": {
-          "name": "routing_rules_table_gateway_id_gateways_table_id_fk",
-          "tableFrom": "routing_rules_table",
-          "tableTo": "gateways_table",
-          "columnsFrom": [
-            "gateway_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "routing_rule_clients_table": {
-      "name": "routing_rule_clients_table",
-      "columns": {
-        "rule_id": {
-          "name": "rule_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "routing_rule_clients_table_rule_id_routing_rules_table_id_fk": {
-          "name": "routing_rule_clients_table_rule_id_routing_rules_table_id_fk",
-          "tableFrom": "routing_rule_clients_table",
-          "tableTo": "routing_rules_table",
-          "columnsFrom": [
-            "rule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        },
-        "routing_rule_clients_table_client_id_clients_table_id_fk": {
-          "name": "routing_rule_clients_table_client_id_clients_table_id_fk",
-          "tableFrom": "routing_rule_clients_table",
-          "tableTo": "clients_table",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "routing_rule_clients_table_rule_id_client_id_pk": {
-          "columns": [
-            "rule_id",
-            "client_id"
-          ],
-          "name": "routing_rule_clients_table_rule_id_client_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "users_table": {
       "name": "users_table",
       "columns": {
@@ -1452,7 +996,7 @@
           "name": "default_mtu",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "default_persistent_keepalive": {
@@ -1461,6 +1005,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "default_generate_pre_shared_key": {
+          "name": "default_generate_pre_shared_key",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
         },
         "default_dns": {
           "name": "default_dns",

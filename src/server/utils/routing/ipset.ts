@@ -7,7 +7,7 @@ import { createDebug } from 'obug';
 import { setName } from './marks';
 
 import { exec } from '#server/utils/cmd';
-import type { ID } from '#server/utils/types';
+import type { ID } from '#shared/contracts/validation';
 
 const ROUTER_DEBUG = createDebug('Router');
 
@@ -40,7 +40,9 @@ export type Canonical = {
  */
 export function canonical(entry: string): Canonical | null {
   const value = entry.trim();
-  if (!isIP(value) && isCidr(value) === 0) return null;
+  if (!isIP(value) && isCidr(value) === 0) {
+    return null;
+  }
 
   const cidr = parseCidr(value);
   const family = cidr.version;
@@ -87,7 +89,9 @@ export async function addAddress(ruleId: ID, address: string, timeout = 0) {
   }
   // Catch-alls are matched without a set: `hash:net` rejects a zero-length
   // prefix on many kernels.
-  if (entry.catchAll) return;
+  if (entry.catchAll) {
+    return;
+  }
 
   const expiry = timeout > 0 ? ` timeout ${timeout}` : '';
   try {
@@ -104,7 +108,9 @@ export async function addAddress(ruleId: ID, address: string, timeout = 0) {
 
 export async function removeAddress(ruleId: ID, address: string) {
   const entry = canonical(address);
-  if (!entry || entry.catchAll) return;
+  if (!entry || entry.catchAll) {
+    return;
+  }
 
   await quiet(
     `ipset del ${setName(ruleId, entry.family)} ${entry.address} -exist`
@@ -151,13 +157,19 @@ async function listSet(name: string): Promise<SetEntry[]> {
 
   const lines = output.split('\n').map((line) => line.trim());
   const start = lines.indexOf('Members:');
-  if (start === -1) return [];
+  if (start === -1) {
+    return [];
+  }
 
   const entries: SetEntry[] = [];
   for (const line of lines.slice(start + 1)) {
-    if (!line) continue;
+    if (!line) {
+      continue;
+    }
     const match = ENTRY.exec(line);
-    if (!match?.[1]) continue;
+    if (!match?.[1]) {
+      continue;
+    }
     entries.push({
       address: match[1],
       timeout: Number(match[2] ?? 0),
@@ -200,8 +212,12 @@ export async function destroyOrphanSets(liveRuleIds: readonly ID[]) {
 
   for (const name of output.split('\n').map((line) => line.trim())) {
     const match = OWNED_SET.exec(name);
-    if (!match?.[1]) continue;
-    if (live.has(Number(match[1]))) continue;
+    if (!match?.[1]) {
+      continue;
+    }
+    if (live.has(Number(match[1]))) {
+      continue;
+    }
 
     ROUTER_DEBUG(`Destroying orphaned set ${name}`);
     await quiet(`ipset destroy ${name}`);

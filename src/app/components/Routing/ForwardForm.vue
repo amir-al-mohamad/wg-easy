@@ -1,39 +1,41 @@
 <template>
   <form
-    class="mb-4 rounded-lg border-2 border-red-800 p-4"
+    class="mb-4 rounded-lg border border-accent/40 bg-surface p-4 sm:p-5"
     @submit.prevent="submit"
   >
-    <h4 class="mb-3 font-semibold">
+    <h4 class="mb-4 font-semibold text-foreground">
       {{
         forward
-          ? $t('routing.forwards.editTitle')
-          : $t('routing.forwards.newTitle')
+          ? $t('admin.routing.forwards.editTitle')
+          : $t('admin.routing.forwards.newTitle')
       }}
     </h4>
 
     <div class="flex flex-col gap-3">
       <div class="flex flex-col gap-1">
         <RoutingLabel for="forward-name">
-          {{ $t('routing.forwards.name') }}
+          {{ $t('admin.routing.forwards.name') }}
         </RoutingLabel>
         <BaseInput id="forward-name" v-model="form.name" required />
       </div>
 
       <div class="flex flex-col gap-1">
         <RoutingLabel for="forward-client">
-          {{ $t('routing.forwards.client') }}
+          {{ $t('admin.routing.forwards.client') }}
         </RoutingLabel>
-        <RoutingSelect
+        <BaseSelect
           id="forward-client"
           v-model="form.clientId"
           :options="clientOptions"
+          :label="$t('admin.routing.forwards.client')"
+          :show-value="false"
         />
       </div>
 
       <div class="flex flex-wrap gap-3">
         <div class="flex flex-col gap-1">
           <RoutingLabel for="forward-external">
-            {{ $t('routing.forwards.externalPort') }}
+            {{ $t('admin.routing.forwards.externalPort') }}
           </RoutingLabel>
           <BaseInput
             id="forward-external"
@@ -43,14 +45,14 @@
             :max="bounds.max"
             required
           />
-          <p class="text-sm text-gray-500 dark:text-neutral-400">
-            {{ $t('routing.forwards.rangeHelp', { ports: ports.text }) }}
+          <p class="text-xs text-subtle">
+            {{ $t('admin.routing.forwards.rangeHelp', { ports: ports.text }) }}
           </p>
         </div>
 
         <div class="flex flex-col gap-1">
           <RoutingLabel for="forward-internal">
-            {{ $t('routing.forwards.internalPort') }}
+            {{ $t('admin.routing.forwards.internalPort') }}
           </RoutingLabel>
           <BaseInput
             id="forward-internal"
@@ -64,12 +66,14 @@
 
         <div class="flex flex-col gap-1">
           <RoutingLabel for="forward-protocol">
-            {{ $t('routing.forwards.protocol') }}
+            {{ $t('admin.routing.forwards.protocol') }}
           </RoutingLabel>
-          <RoutingSelect
+          <BaseSelect
             id="forward-protocol"
             v-model="form.protocol"
             :options="protocolOptions"
+            :label="$t('admin.routing.forwards.protocol')"
+            :show-value="false"
           />
         </div>
       </div>
@@ -77,10 +81,10 @@
 
     <div class="mt-4 flex flex-wrap gap-2">
       <BasePrimaryButton type="submit">
-        {{ forward ? $t('form.save') : $t('form.add') }}
+        {{ forward ? $t('common.actions.save') : $t('common.actions.add') }}
       </BasePrimaryButton>
       <BaseSecondaryButton type="button" @click="emit('cancel')">
-        {{ $t('routing.cancel') }}
+        {{ $t('admin.routing.cancel') }}
       </BaseSecondaryButton>
     </div>
   </form>
@@ -144,9 +148,11 @@ const save = useSubmit(
       { method: 'post', body: data }
     ),
   {
-    successMsg: t('routing.forwards.saved'),
+    successMsg: t('admin.routing.forwards.saved'),
     revert: async (success) => {
-      if (success) emit('saved');
+      if (success) {
+        emit('saved');
+      }
     },
   }
 );

@@ -117,7 +117,9 @@ function askUpstream(
 
     let settled = false;
     const finish = (reply: Buffer | null) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       socket.close();
@@ -127,12 +129,16 @@ function askUpstream(
     const timer = setTimeout(() => finish(null), timeoutMs);
 
     socket.on('message', (reply) => {
-      if (reply.length >= 12 && reply.readUInt16BE(0) === id) finish(reply);
+      if (reply.length >= 12 && reply.readUInt16BE(0) === id) {
+        finish(reply);
+      }
     });
     socket.once('error', () => finish(null));
     socket.connect(PORT, upstream, () => {
       socket.send(query, (error) => {
-        if (error) finish(null);
+        if (error) {
+          finish(null);
+        }
       });
     });
   });
@@ -145,14 +151,18 @@ async function forward(query: Buffer): Promise<Buffer | null> {
 
   for (const upstream of config.upstreams) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
+    if (remaining <= 0) {
+      break;
+    }
 
     const reply = await askUpstream(
       query,
       upstream,
       Math.min(perUpstream, remaining)
     );
-    if (reply) return reply;
+    if (reply) {
+      return reply;
+    }
   }
   return null;
 }
@@ -171,7 +181,9 @@ async function learn(client: string, question: string, reply: Buffer) {
       (candidate.clients.length === 0 || candidate.clients.includes(client)) &&
       matchesAny(question, candidate.patterns)
   );
-  if (!rule) return;
+  if (!rule) {
+    return;
+  }
 
   const records = readAnswerRecords(reply).filter(
     (record) => !containsCidr(NEVER_LEARN, record.address)
@@ -196,8 +208,12 @@ async function resolveQuery(
   client: string,
   query: Buffer
 ): Promise<Buffer | null> {
-  if (query.length < 12) return null;
-  if (!isClient(client)) return null;
+  if (query.length < 12) {
+    return null;
+  }
+  if (!isClient(client)) {
+    return null;
+  }
 
   const perClient = inFlightByClient.get(client) ?? 0;
   if (inFlight >= MAX_IN_FLIGHT || perClient >= MAX_IN_FLIGHT_PER_CLIENT) {
@@ -226,8 +242,11 @@ async function resolveQuery(
   } finally {
     inFlight--;
     const left = (inFlightByClient.get(client) ?? 1) - 1;
-    if (left <= 0) inFlightByClient.delete(client);
-    else inFlightByClient.set(client, left);
+    if (left <= 0) {
+      inFlightByClient.delete(client);
+    } else {
+      inFlightByClient.set(client, left);
+    }
   }
 }
 
@@ -243,7 +262,9 @@ function listenUdp(address: string) {
   socket.on('message', (query, from) => {
     void resolveQuery(from.address, query)
       .then((reply) => {
-        if (reply) socket.send(reply, from.port, from.address);
+        if (reply) {
+          socket.send(reply, from.port, from.address);
+        }
       })
       .catch((error) => ROUTER_DEBUG('Lookup failed:', error));
   });
@@ -281,14 +302,18 @@ function listenTcp(address: string) {
 
       while (buffered.length >= 2) {
         const length = buffered.readUInt16BE(0);
-        if (length > MAX_TCP_MESSAGE || buffered.length < 2 + length) break;
+        if (length > MAX_TCP_MESSAGE || buffered.length < 2 + length) {
+          break;
+        }
 
         const query = buffered.subarray(2, 2 + length);
         buffered = buffered.subarray(2 + length);
 
         void resolveQuery(client, query)
           .then((reply) => {
-            if (!reply || connection.destroyed) return;
+            if (!reply || connection.destroyed) {
+              return;
+            }
             const framed = Buffer.alloc(2 + reply.length);
             framed.writeUInt16BE(reply.length, 0);
             reply.copy(framed, 2);
@@ -322,7 +347,9 @@ function listenTcp(address: string) {
  * is offered a resolver.
  */
 export function startDnsProxy() {
-  if (sockets.length > 0 || servers.length > 0) return;
+  if (sockets.length > 0 || servers.length > 0) {
+    return;
+  }
 
   for (const address of config.listen) {
     listenUdp(address);
@@ -331,8 +358,12 @@ export function startDnsProxy() {
 }
 
 export function stopDnsProxy() {
-  for (const socket of sockets) socket.close();
-  for (const server of servers) server.close();
+  for (const socket of sockets) {
+    socket.close();
+  }
+  for (const server of servers) {
+    server.close();
+  }
   sockets = [];
   servers = [];
 }

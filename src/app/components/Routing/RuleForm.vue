@@ -1,41 +1,47 @@
 <template>
   <form
-    class="mb-4 rounded-lg border-2 border-red-800 p-4"
+    class="mb-4 rounded-lg border border-accent/40 bg-surface p-4 sm:p-5"
     @submit.prevent="submit"
   >
-    <h4 class="mb-3 font-semibold">
-      {{ rule ? $t('routing.rules.editTitle') : $t('routing.rules.newTitle') }}
+    <h4 class="mb-4 font-semibold text-foreground">
+      {{
+        rule
+          ? $t('admin.routing.rules.editTitle')
+          : $t('admin.routing.rules.newTitle')
+      }}
     </h4>
 
     <div class="flex flex-col gap-3">
       <div class="flex flex-col gap-1">
-        <RoutingLabel for="rule-name">{{
-          $t('routing.rules.name')
-        }}</RoutingLabel>
+        <RoutingLabel for="rule-name">
+          {{ $t('admin.routing.rules.name') }}
+        </RoutingLabel>
         <BaseInput id="rule-name" v-model="form.name" required />
       </div>
 
       <div class="flex flex-col gap-1">
         <RoutingLabel for="rule-description">
-          {{ $t('routing.rules.note') }}
+          {{ $t('admin.routing.rules.note') }}
         </RoutingLabel>
         <BaseInput id="rule-description" v-model="form.description" />
       </div>
 
       <div class="flex flex-col gap-1">
         <RoutingLabel for="rule-action">
-          {{ $t('routing.rules.action') }}
+          {{ $t('admin.routing.rules.action') }}
         </RoutingLabel>
-        <RoutingSelect
+        <BaseSelect
           id="rule-action"
           v-model="actionValue"
           :options="actionOptions"
+          :label="$t('admin.routing.rules.action')"
+          :show-value="false"
         />
       </div>
 
       <div class="flex flex-col gap-1">
         <RoutingLabel for="rule-patterns">
-          {{ $t('routing.rules.patterns') }}
+          {{ $t('admin.routing.rules.patterns') }}
         </RoutingLabel>
         <BaseTextArea
           id="rule-patterns"
@@ -43,15 +49,15 @@
           :rows="4"
           placeholder="example.com&#10;*.example.com&#10;.google.com"
         />
-        <p class="text-sm text-gray-500 dark:text-neutral-400">
-          {{ $t('routing.rules.patternsHelp') }}
+        <p class="text-xs text-subtle">
+          {{ $t('admin.routing.rules.patternsHelp') }}
         </p>
         <RoutingPatternPreview class="mt-1" :text="patternsText" />
       </div>
 
       <div class="flex flex-col gap-1">
         <RoutingLabel for="rule-addresses">
-          {{ $t('routing.rules.addresses') }}
+          {{ $t('admin.routing.rules.addresses') }}
         </RoutingLabel>
         <BaseTextArea
           id="rule-addresses"
@@ -59,47 +65,45 @@
           :rows="2"
           placeholder="1.2.3.4&#10;10.0.0.0/8&#10;2001:db8::/32"
         />
-        <p class="text-sm text-gray-500 dark:text-neutral-400">
-          {{ $t('routing.rules.addressesHelp') }}
+        <p class="text-xs text-subtle">
+          {{ $t('admin.routing.rules.addressesHelp') }}
         </p>
       </div>
 
       <div v-if="patternsText.trim()" class="flex items-center gap-3">
         <BaseSwitch id="rule-auto-resolve" v-model="form.autoResolve" />
         <RoutingLabel for="rule-auto-resolve">
-          {{ $t('routing.rules.autoResolve') }}
+          {{ $t('admin.routing.rules.autoResolve') }}
         </RoutingLabel>
       </div>
 
       <fieldset class="flex flex-col gap-1">
-        <legend class="font-medium">{{ $t('routing.rules.clients') }}</legend>
-        <p class="text-sm text-gray-500 dark:text-neutral-400">
-          {{ $t('routing.rules.clientsHelp') }}
+        <legend class="text-sm font-medium text-muted">
+          {{ $t('admin.routing.rules.clients') }}
+        </legend>
+        <p class="text-xs text-subtle">
+          {{ $t('admin.routing.rules.clientsHelp') }}
         </p>
         <ul
-          class="max-h-40 overflow-y-auto rounded-lg border-2 border-gray-100 p-2 dark:border-neutral-600"
+          class="max-h-48 overflow-y-auto rounded-lg border border-line bg-input p-1.5"
         >
           <li v-for="client in clients" :key="client.id">
-            <label class="flex cursor-pointer items-center gap-2 py-1">
-              <input
-                v-model="form.clientIds"
-                type="checkbox"
-                :value="client.id"
-                class="accent-red-800"
+            <label
+              class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-surface-hover"
+            >
+              <BaseCheckbox
+                :label="client.name"
+                :model-value="form.clientIds.includes(client.id)"
+                @update:model-value="toggleClient(client.id, $event === true)"
               />
-              <span>{{ client.name }}</span>
-              <span
-                class="font-mono text-sm text-gray-400 dark:text-neutral-400"
-              >
+              <span class="truncate text-foreground">{{ client.name }}</span>
+              <span class="ml-auto font-mono text-xs text-subtle">
                 {{ client.ipv4Address }}
               </span>
             </label>
           </li>
-          <li
-            v-if="!clients.length"
-            class="py-1 text-sm text-gray-500 dark:text-neutral-400"
-          >
-            {{ $t('routing.rules.noClients') }}
+          <li v-if="!clients.length" class="px-2 py-1.5 text-subtle">
+            {{ $t('admin.routing.rules.noClients') }}
           </li>
         </ul>
       </fieldset>
@@ -107,10 +111,10 @@
 
     <div class="mt-4 flex flex-wrap gap-2">
       <BasePrimaryButton type="submit">
-        {{ rule ? $t('form.save') : $t('form.add') }}
+        {{ rule ? $t('common.actions.save') : $t('common.actions.add') }}
       </BasePrimaryButton>
       <BaseSecondaryButton type="button" @click="emit('cancel')">
-        {{ $t('routing.cancel') }}
+        {{ $t('admin.routing.cancel') }}
       </BaseSecondaryButton>
     </div>
   </form>
@@ -168,12 +172,18 @@ const actionValue = computed({
 
 const actionOptions = computed(() => [
   ...props.gateways.map((gateway) => ({
-    label: t('routing.action.viaGateway', { name: gateway.name }),
+    label: t('admin.routing.action.viaGateway', { name: gateway.name }),
     value: `gateway:${gateway.id}`,
   })),
-  { label: t('routing.action.direct'), value: 'direct' },
-  { label: t('routing.action.block'), value: 'block' },
+  { label: t('admin.routing.action.direct'), value: 'direct' },
+  { label: t('admin.routing.action.block'), value: 'block' },
 ]);
+
+function toggleClient(id: number, checked: boolean) {
+  form.clientIds = checked
+    ? [...form.clientIds, id]
+    : form.clientIds.filter((other) => other !== id);
+}
 
 function lines(text: string) {
   return text
@@ -191,11 +201,13 @@ const save = useSubmit(
       { method: 'post', body: data }
     ),
   {
-    successMsg: t('routing.rules.saved'),
+    successMsg: t('admin.routing.rules.saved'),
     // Only leave the form on success; otherwise the edits would vanish along
     // with the error explaining why they were rejected.
     revert: async (success) => {
-      if (success) emit('saved');
+      if (success) {
+        emit('saved');
+      }
     },
   }
 );

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ce3e89d0-e490-4f13-8598-1039ddd8f75f",
-  "prevId": "3b568f03-33dd-41fa-884d-b7574f6e1466",
+  "id": "07768807-44b7-4508-bce3-20a479728214",
+  "prevId": "4f51ca3b-41f6-470d-a93e-8a1f84e84440",
   "tables": {
     "clients_table": {
       "name": "clients_table",
@@ -99,7 +99,7 @@
           "name": "pre_shared_key",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "expires_at": {
@@ -141,7 +141,7 @@
           "name": "mtu",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "j_c": {
@@ -270,6 +270,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "isolated": {
+          "name": "isolated",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -340,6 +348,65 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "client_isolations_table": {
+      "name": "client_isolations_table",
+      "columns": {
+        "client_a_id": {
+          "name": "client_a_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_b_id": {
+          "name": "client_b_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "client_isolations_table_client_a_id_clients_table_id_fk": {
+          "name": "client_isolations_table_client_a_id_clients_table_id_fk",
+          "tableFrom": "client_isolations_table",
+          "tableTo": "clients_table",
+          "columnsFrom": [
+            "client_a_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        },
+        "client_isolations_table_client_b_id_clients_table_id_fk": {
+          "name": "client_isolations_table_client_b_id_clients_table_id_fk",
+          "tableFrom": "client_isolations_table",
+          "tableTo": "clients_table",
+          "columnsFrom": [
+            "client_b_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "client_isolations_table_client_a_id_client_b_id_pk": {
+          "columns": [
+            "client_a_id",
+            "client_b_id"
+          ],
+          "name": "client_isolations_table_client_a_id_client_b_id_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
@@ -670,7 +737,7 @@
           "name": "mtu",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "routing_table": {
@@ -1473,7 +1540,7 @@
           "name": "default_mtu",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "default_persistent_keepalive": {
@@ -1482,6 +1549,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "default_generate_pre_shared_key": {
+          "name": "default_generate_pre_shared_key",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
         },
         "default_dns": {
           "name": "default_dns",

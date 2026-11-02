@@ -1,18 +1,20 @@
 <template>
   <BaseDialog trigger-class="inline-flex">
     <template #trigger>
-      <BaseSecondaryButton as="span" class="px-2 py-1 text-sm">
-        {{ $t('routing.remove') }}
+      <BaseSecondaryButton as="span" class="min-h-9 px-3 py-1.5 text-xs">
+        {{ $t('admin.routing.remove') }}
       </BaseSecondaryButton>
     </template>
     <template #title>{{ title }}</template>
     <template #description><slot /></template>
     <template #actions>
       <DialogClose as-child>
-        <BasePrimaryButton>{{ $t('dialog.cancel') }}</BasePrimaryButton>
+        <BaseSecondaryButton>
+          {{ $t('common.actions.cancel') }}
+        </BaseSecondaryButton>
       </DialogClose>
       <DialogClose as-child>
-        <BaseSecondaryButton @click="$emit('delete')">
+        <BaseSecondaryButton class="ui-button-danger" @click="$emit('delete')">
           {{ title }}
         </BaseSecondaryButton>
       </DialogClose>

@@ -1,5 +1,5 @@
 <template>
-  <main v-if="data">
+  <div v-if="data" class="space-y-4">
     <RoutingStatusNotice :status="data.status" />
 
     <RoutingDnsNotice
@@ -10,27 +10,30 @@
     />
 
     <RoutingSection
-      :title="$t('routing.default.title')"
-      :description="$t('routing.default.description')"
+      :title="$t('admin.routing.default.title')"
+      :description="$t('admin.routing.default.description')"
     >
       <div class="flex flex-wrap items-center gap-3">
-        <RoutingSelect
+        <BaseSelect
           id="default-action"
           v-model="defaultAction"
           :options="defaultOptions"
+          :label="$t('admin.routing.default.title')"
+          :show-value="false"
+          class="max-w-xs"
         />
         <p
           v-if="data.config.defaultAction === 'block'"
-          class="text-sm text-gray-500 dark:text-neutral-400"
+          class="text-sm text-warning"
         >
-          {{ $t('routing.default.blockWarning') }}
+          {{ $t('admin.routing.default.blockWarning') }}
         </p>
       </div>
     </RoutingSection>
 
     <RoutingSection
-      :title="$t('routing.gateways.title')"
-      :description="$t('routing.gateways.description')"
+      :title="$t('admin.routing.gateways.title')"
+      :description="$t('admin.routing.gateways.description')"
     >
       <RoutingGatewayList
         :gateways="data.gateways"
@@ -41,8 +44,8 @@
     </RoutingSection>
 
     <RoutingSection
-      :title="$t('routing.dnsSettings.title')"
-      :description="$t('routing.dnsSettings.description')"
+      :title="$t('admin.routing.dnsSettings.title')"
+      :description="$t('admin.routing.dnsSettings.description')"
     >
       <RoutingDnsSettings
         :config="data.config"
@@ -53,12 +56,12 @@
     </RoutingSection>
 
     <RoutingSection
-      :title="$t('routing.rules.title')"
-      :description="$t('routing.rules.description')"
+      :title="$t('admin.routing.rules.title')"
+      :description="$t('admin.routing.rules.description')"
     >
       <template #actions>
         <BasePrimaryButton v-if="!ruleFormOpen" @click="newRule">
-          {{ $t('routing.rules.add') }}
+          {{ $t('admin.routing.rules.add') }}
         </BasePrimaryButton>
       </template>
 
@@ -80,13 +83,13 @@
     </RoutingSection>
 
     <RoutingSection
-      :title="$t('routing.forwards.title')"
+      :title="$t('admin.routing.forwards.title')"
       :description="
         data.forwardPorts.specs.length
-          ? $t('routing.forwards.description', {
+          ? $t('admin.routing.forwards.description', {
               ports: data.forwardPorts.text,
             })
-          : $t('routing.forwards.nonePublished')
+          : $t('admin.routing.forwards.nonePublished')
       "
     >
       <template #actions>
@@ -98,7 +101,7 @@
           "
           @click="newForward"
         >
-          {{ $t('routing.forwards.add') }}
+          {{ $t('admin.routing.forwards.add') }}
         </BasePrimaryButton>
       </template>
 
@@ -118,7 +121,7 @@
         @edit="editForward"
       />
     </RoutingSection>
-  </main>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -141,20 +144,27 @@ const hasDomainRules = computed(() =>
 
 const saveConfig = useSubmit(
   (body) => $fetch('/api/admin/routing/config', { method: 'post', body }),
-  { revert: async () => refresh(), successMsg: t('routing.default.saved') }
+  {
+    revert: async () => refresh(),
+    successMsg: t('admin.routing.default.saved'),
+  }
 );
 
 const defaultAction = computed({
   get: () => {
     const config = data.value?.config;
-    if (!config) return 'direct';
+    if (!config) {
+      return 'direct';
+    }
     return config.defaultAction === 'gateway'
       ? `gateway:${config.defaultGatewayId ?? ''}`
       : config.defaultAction;
   },
   set: (value: string | number | null) => {
     const config = data.value?.config;
-    if (!config) return;
+    if (!config) {
+      return;
+    }
 
     const text = String(value);
     const isGateway = text.startsWith('gateway:');
@@ -171,18 +181,18 @@ const defaultAction = computed({
 
 const defaultOptions = computed(() => [
   ...(data.value?.gateways ?? []).map((gateway) => ({
-    label: t('routing.action.viaGateway', { name: gateway.name }),
+    label: t('admin.routing.action.viaGateway', { name: gateway.name }),
     value: `gateway:${gateway.id}`,
   })),
-  { label: t('routing.action.direct'), value: 'direct' },
-  { label: t('routing.action.block'), value: 'block' },
+  { label: t('admin.routing.action.direct'), value: 'direct' },
+  { label: t('admin.routing.action.block'), value: 'block' },
 ]);
 
 // DNS
 
 const enableProxyDns = useSubmit(
   () => $fetch('/api/admin/routing/dns/use-proxy', { method: 'post' }),
-  { revert: async () => refresh(), successMsg: t('routing.dns.fixed') }
+  { revert: async () => refresh(), successMsg: t('admin.routing.dns.fixed') }
 );
 
 // Rules

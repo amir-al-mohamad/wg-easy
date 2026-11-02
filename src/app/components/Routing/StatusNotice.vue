@@ -1,27 +1,27 @@
 <template>
   <div
     v-if="!status.available"
-    class="mb-6 rounded-lg border-2 border-red-800 bg-red-50 p-4 dark:bg-red-900/20"
+    role="alert"
+    class="surface border-accent/30 p-4 sm:p-5"
   >
-    <h4 class="font-semibold text-red-900 dark:text-red-200">
-      {{ $t('routing.unavailable.title') }}
+    <h4 class="font-semibold text-accent">
+      {{ $t('admin.routing.unavailable.title') }}
     </h4>
-    <p class="mt-1 max-w-prose text-sm text-red-900/80 dark:text-red-200/80">
-      {{ $t('routing.unavailable.explanation') }}
+    <p class="mt-1 max-w-prose text-sm text-muted">
+      {{ $t('admin.routing.unavailable.explanation') }}
     </p>
   </div>
 
   <div
     v-else-if="status.failures !== 0"
-    class="mb-6 rounded-lg border-2 border-amber-400 bg-amber-50 p-4 dark:border-amber-500/60 dark:bg-amber-500/10"
+    role="alert"
+    class="surface border-warning/40 p-4 sm:p-5"
   >
-    <h4 class="font-semibold text-amber-900 dark:text-amber-200">
-      {{ $t('routing.applyFailed.title') }}
+    <h4 class="font-semibold text-warning">
+      {{ $t('admin.routing.applyFailed.title') }}
     </h4>
-    <p
-      class="mt-1 max-w-prose text-sm text-amber-900/80 dark:text-amber-200/80"
-    >
-      {{ $t('routing.applyFailed.explanation') }}
+    <p class="mt-1 max-w-prose text-sm text-muted">
+      {{ $t('admin.routing.applyFailed.explanation') }}
     </p>
   </div>
 </template>

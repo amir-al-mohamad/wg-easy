@@ -34,8 +34,12 @@ export type DnsRecord = {
  * @returns the name, or null if the message is malformed or asks nothing
  */
 export function readQuestionName(message: Buffer): string | null {
-  if (message.length < HEADER_LENGTH) return null;
-  if (message.readUInt16BE(4) === 0) return null; // QDCOUNT
+  if (message.length < HEADER_LENGTH) {
+    return null;
+  }
+  if (message.readUInt16BE(4) === 0) {
+    return null;
+  } // QDCOUNT
 
   const labels: string[] = [];
   let offset = HEADER_LENGTH;
@@ -45,10 +49,14 @@ export function readQuestionName(message: Buffer): string | null {
     if (length === 0) {
       return labels.length > 0 ? labels.join('.').toLowerCase() : null;
     }
-    if ((length & POINTER_MASK) === POINTER_MASK) return null;
+    if ((length & POINTER_MASK) === POINTER_MASK) {
+      return null;
+    }
 
     offset++;
-    if (offset + length > message.length) return null;
+    if (offset + length > message.length) {
+      return null;
+    }
 
     labels.push(message.toString('ascii', offset, offset + length));
     offset += length;
@@ -74,7 +82,9 @@ function skipName(message: Buffer, start: number): number | null {
     }
 
     offset++;
-    if (length === 0) return offset;
+    if (length === 0) {
+      return offset;
+    }
 
     offset += length;
   }
@@ -93,18 +103,24 @@ function skipName(message: Buffer, start: number): number | null {
  * malformed reply should cost the client nothing but an unrouted lookup
  */
 export function readAnswerRecords(message: Buffer): DnsRecord[] {
-  if (message.length < HEADER_LENGTH) return [];
+  if (message.length < HEADER_LENGTH) {
+    return [];
+  }
 
   const questions = message.readUInt16BE(4);
   const answers = message.readUInt16BE(6);
-  if (answers === 0) return [];
+  if (answers === 0) {
+    return [];
+  }
 
   let offset = HEADER_LENGTH;
 
   // Step over the question section: a name, then QTYPE and QCLASS.
   for (let index = 0; index < questions; index++) {
     const next = skipName(message, offset);
-    if (next === null || next + 4 > message.length) return [];
+    if (next === null || next + 4 > message.length) {
+      return [];
+    }
     offset = next + 4;
   }
 
@@ -113,7 +129,9 @@ export function readAnswerRecords(message: Buffer): DnsRecord[] {
   for (let index = 0; index < answers; index++) {
     const next = skipName(message, offset);
     // NAME, then TYPE(2) CLASS(2) TTL(4) RDLENGTH(2).
-    if (next === null || next + 10 > message.length) break;
+    if (next === null || next + 10 > message.length) {
+      break;
+    }
 
     const type = message.readUInt16BE(next);
     const ttl = message.readUInt32BE(next + 4);
@@ -121,7 +139,9 @@ export function readAnswerRecords(message: Buffer): DnsRecord[] {
 
     const rdStart = next + 10;
     const rdEnd = rdStart + rdLength;
-    if (rdEnd > message.length) break;
+    if (rdEnd > message.length) {
+      break;
+    }
 
     if (type === TYPE_A && rdLength === RDLENGTH_A) {
       records.push({
@@ -148,7 +168,9 @@ export function readAnswerRecords(message: Buffer): DnsRecord[] {
  * timeout, which turns a momentary upstream problem into a visible stall.
  */
 export function toServFail(query: Buffer): Buffer | null {
-  if (query.length < HEADER_LENGTH) return null;
+  if (query.length < HEADER_LENGTH) {
+    return null;
+  }
 
   const response = Buffer.from(query);
   response[2] = response[2]! | 0x80; // QR: this is a response

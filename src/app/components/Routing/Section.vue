@@ -1,14 +1,13 @@
 <template>
-  <section class="mb-8 last:mb-0">
-    <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-      <div>
-        <h3 class="font-semibold text-gray-900 dark:text-neutral-100">
+  <section class="surface p-5 sm:p-6">
+    <div
+      class="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4"
+    >
+      <div class="min-w-0">
+        <h2 class="text-base font-semibold tracking-tight text-foreground">
           {{ title }}
-        </h3>
-        <p
-          v-if="description"
-          class="mt-0.5 max-w-prose text-sm text-gray-500 dark:text-neutral-400"
-        >
+        </h2>
+        <p v-if="description" class="mt-1 max-w-prose text-sm text-subtle">
           {{ description }}
         </p>
       </div>

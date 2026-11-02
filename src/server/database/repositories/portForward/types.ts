@@ -9,37 +9,37 @@ import {
   PortSchema,
   safeStringRefine,
   t,
-} from '#server/utils/types';
+} from '#shared/contracts/validation';
 import { isForwardPortPublished } from '#server/utils/routing/env';
 
 export type PortForwardType = InferSelectModel<typeof portForward>;
 
 export const ProtocolSchema = z.enum(['tcp', 'udp', 'both'], {
-  message: t('zod.portForward.protocol'),
+  message: t('validation.portForward.protocol'),
 });
 
 export type Protocol = z.infer<typeof ProtocolSchema>;
 
 export const PortForwardCreateSchema = z.object({
   name: z
-    .string({ message: t('zod.portForward.name') })
-    .min(1, { message: t('zod.portForward.name') })
-    .max(128, { message: t('zod.portForward.name') })
+    .string({ message: t('validation.portForward.name') })
+    .min(1, { message: t('validation.portForward.name') })
+    .max(128, { message: t('validation.portForward.name') })
     .pipe(safeStringRefine)
     .pipe(controlStringRefine),
   description: z
-    .string({ message: t('zod.portForward.description') })
-    .max(512, { message: t('zod.portForward.description') })
+    .string({ message: t('validation.portForward.description') })
+    .max(512, { message: t('validation.portForward.description') })
     .pipe(safeStringRefine)
     .pipe(controlStringRefine)
     .default(''),
   enabled: EnabledSchema.default(true),
   clientId: z
-    .number({ message: t('zod.portForward.client') })
+    .number({ message: t('validation.portForward.client') })
     .int()
     .positive(),
   externalPort: PortSchema.refine((port) => isForwardPortPublished(port), {
-    message: t('zod.portForward.externalPortRange'),
+    message: t('validation.portForward.externalPortRange'),
   }),
   internalPort: PortSchema,
   protocol: ProtocolSchema,
@@ -60,6 +60,6 @@ export function conflictingProtocols(protocol: Protocol): Protocol[] {
   return protocol === 'both' ? ['tcp', 'udp', 'both'] : [protocol, 'both'];
 }
 
-const forwardId = z.coerce.number({ message: t('zod.portForward.id') });
+const forwardId = z.coerce.number({ message: t('validation.portForward.id') });
 
 export const PortForwardGetSchema = z.object({ forwardId });

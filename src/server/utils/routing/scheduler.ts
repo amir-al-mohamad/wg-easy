@@ -5,8 +5,8 @@ import { addAddress, listAddresses } from './ipset';
 import { withRoutingLock } from './lock';
 import { resolveRule } from './resolve';
 
-import Database from '#server/utils/Database';
-import type { ID } from '#server/utils/types';
+import { getDatabase } from '#db';
+import type { ID } from '#shared/contracts/validation';
 import { setIntervalImmediately } from '#shared/utils/time';
 
 const ROUTER_DEBUG = createDebug('Router');
@@ -39,13 +39,17 @@ function now() {
  */
 async function needsResolve(ruleId: ID) {
   const since = now() - (lastResolveAt.get(ruleId) ?? 0);
-  if (since < MIN_GAP_SECONDS) return false;
+  if (since < MIN_GAP_SECONDS) {
+    return false;
+  }
 
   const entries = await listAddresses(ruleId);
   const learned = entries.filter((entry) => entry.timeout > 0);
 
   // Nothing learned yet: either brand new, or everything already expired.
-  if (learned.length === 0) return true;
+  if (learned.length === 0) {
+    return true;
+  }
 
   const soonest = learned.reduce(
     (min, entry) => Math.min(min, entry.timeout),
@@ -56,14 +60,20 @@ async function needsResolve(ruleId: ID) {
 
 async function resolvePass() {
   const [rules, config] = await Promise.all([
-    Database.routingRules.getAll(),
-    Database.routingConfig.get(),
+    getDatabase().routingRules.getAll(),
+    getDatabase().routingConfig.get(),
   ]);
 
   for (const rule of rules) {
-    if (!rule.enabled || !rule.autoResolve) continue;
-    if (rule.patterns.length === 0) continue;
-    if (!(await needsResolve(rule.id))) continue;
+    if (!rule.enabled || !rule.autoResolve) {
+      continue;
+    }
+    if (rule.patterns.length === 0) {
+      continue;
+    }
+    if (!(await needsResolve(rule.id))) {
+      continue;
+    }
 
     lastResolveAt.set(rule.id, now());
     const result = await resolveRule(
@@ -80,7 +90,9 @@ async function resolvePass() {
   }
 
   for (const id of lastResolveAt.keys()) {
-    if (!rules.some((rule) => rule.id === id)) lastResolveAt.delete(id);
+    if (!rules.some((rule) => rule.id === id)) {
+      lastResolveAt.delete(id);
+    }
   }
 }
 
@@ -91,10 +103,12 @@ async function resolvePass() {
  * replaces the timeout rather than adding to it).
  */
 async function trafficPass() {
-  const rules = await Database.routingRules.getAll();
+  const rules = await getDatabase().routingRules.getAll();
 
   for (const rule of rules) {
-    if (!rule.enabled) continue;
+    if (!rule.enabled) {
+      continue;
+    }
 
     const entries = await listAddresses(rule.id);
     const previous = lastPacketCount.get(rule.id);
@@ -104,11 +118,17 @@ async function trafficPass() {
     );
 
     // Nothing to compare against on the first pass after a restart.
-    if (!previous) continue;
+    if (!previous) {
+      continue;
+    }
 
     for (const entry of entries) {
-      if (entry.timeout === 0) continue; // permanent already
-      if (entry.packets <= (previous.get(entry.address) ?? 0)) continue;
+      if (entry.timeout === 0) {
+        continue;
+      } // permanent already
+      if (entry.packets <= (previous.get(entry.address) ?? 0)) {
+        continue;
+      }
 
       await addAddress(
         rule.id,
@@ -119,7 +139,9 @@ async function trafficPass() {
   }
 
   for (const id of lastPacketCount.keys()) {
-    if (!rules.some((rule) => rule.id === id)) lastPacketCount.delete(id);
+    if (!rules.some((rule) => rule.id === id)) {
+      lastPacketCount.delete(id);
+    }
   }
 }
 
@@ -128,7 +150,9 @@ const PRESENCE_TICK_MS = 30_000;
 
 /** Re-apply routing when a gateway's link or route changed since the last apply; nothing else notices. */
 async function presencePass() {
-  if (!(await presenceChanged())) return;
+  if (!(await presenceChanged())) {
+    return;
+  }
 
   ROUTER_DEBUG(
     'A gateway link or route changed since the last apply; re-applying'
@@ -153,7 +177,9 @@ function schedule(
   let running = false;
 
   const timer = setIntervalImmediately(() => {
-    if (running) return;
+    if (running) {
+      return;
+    }
     running = true;
 
     (locked ? withRoutingLock(task) : task())
@@ -167,7 +193,9 @@ function schedule(
 }
 
 export function startScheduler() {
-  if (timers.length > 0) return;
+  if (timers.length > 0) {
+    return;
+  }
 
   schedule('Re-resolve pass', resolvePass, RESOLVE_TICK_MS);
   schedule('Traffic pass', trafficPass, TRAFFIC_TICK_MS);
@@ -175,7 +203,9 @@ export function startScheduler() {
 }
 
 export function stopScheduler() {
-  for (const timer of timers) clearInterval(timer);
+  for (const timer of timers) {
+    clearInterval(timer);
+  }
   timers = [];
   lastResolveAt.clear();
   lastPacketCount.clear();

@@ -5,12 +5,10 @@
         v-for="(rule, index) in rules"
         :key="rule.id"
         draggable="true"
-        class="rounded-lg border-2 p-3 transition"
+        class="rounded-lg border bg-surface p-3 transition"
         :class="[
-          rule.enabled
-            ? 'border-gray-100 dark:border-neutral-600'
-            : 'border-gray-100 opacity-60 dark:border-neutral-600',
-          dragIndex === index ? 'border-red-800' : '',
+          dragIndex === index ? 'border-accent' : 'border-line',
+          { 'opacity-60': !rule.enabled },
         ]"
         @dragstart="dragIndex = index"
         @dragover.prevent
@@ -19,29 +17,30 @@
       >
         <div class="flex flex-wrap items-center gap-3">
           <span
-            class="cursor-grab select-none text-gray-400 active:cursor-grabbing dark:text-neutral-400"
-            :title="$t('routing.rules.dragHint')"
+            class="cursor-grab text-subtle select-none active:cursor-grabbing"
+            :title="$t('admin.routing.rules.dragHint')"
             aria-hidden="true"
-            >⣿</span
           >
+            ⣿
+          </span>
 
           <!-- Arrows, not just dragging: this has to work on a phone and from
                a keyboard, where HTML5 drag does not. -->
           <div class="flex flex-col">
             <button
               type="button"
-              class="px-1 text-xs leading-none text-gray-400 hover:text-red-800 disabled:opacity-30 dark:text-neutral-400"
+              class="px-1 text-xs leading-none text-subtle hover:text-accent disabled:opacity-30"
               :disabled="index === 0"
-              :aria-label="$t('routing.rules.moveUp')"
+              :aria-label="$t('admin.routing.rules.moveUp')"
               @click="move(index, index - 1)"
             >
               ▲
             </button>
             <button
               type="button"
-              class="px-1 text-xs leading-none text-gray-400 hover:text-red-800 disabled:opacity-30 dark:text-neutral-400"
+              class="px-1 text-xs leading-none text-subtle hover:text-accent disabled:opacity-30"
               :disabled="index === rules.length - 1"
-              :aria-label="$t('routing.rules.moveDown')"
+              :aria-label="$t('admin.routing.rules.moveDown')"
               @click="move(index, index + 1)"
             >
               ▼
@@ -51,7 +50,7 @@
           <span class="flex-1 font-medium">{{ rule.name }}</span>
 
           <span
-            class="rounded px-2 py-0.5 text-xs font-medium"
+            class="rounded-md px-2 py-0.5 text-xs font-medium"
             :class="actionClass(rule)"
           >
             {{ actionLabel(rule) }}
@@ -62,22 +61,23 @@
             :model-value="rule.enabled"
             :title="
               rule.enabled
-                ? $t('routing.rules.disable')
-                : $t('routing.rules.enable')
+                ? $t('admin.routing.rules.disable')
+                : $t('admin.routing.rules.enable')
             "
             @update:model-value="toggle(rule, $event)"
           />
 
           <BaseSecondaryButton
-            class="px-2 py-1 text-sm"
+            class="min-h-9 px-3 py-1.5 text-xs"
             @click="emit('edit', rule)"
-            >{{ $t('routing.edit') }}</BaseSecondaryButton
           >
+            {{ $t('admin.routing.edit') }}
+          </BaseSecondaryButton>
           <RoutingDeleteDialog
-            :title="$t('routing.rules.deleteTitle')"
+            :title="$t('admin.routing.rules.deleteTitle')"
             @delete="remove(rule)"
           >
-            <i18n-t keypath="routing.rules.deleteDialog">
+            <i18n-t keypath="admin.routing.rules.deleteDialog">
               <template #name>
                 <strong>{{ rule.name }}</strong>
               </template>
@@ -85,52 +85,56 @@
           </RoutingDeleteDialog>
         </div>
 
-        <p
-          class="mt-2 flex flex-wrap gap-x-3 text-sm text-gray-500 dark:text-neutral-400"
-        >
+        <p class="mt-2 flex flex-wrap gap-x-3 text-sm text-subtle">
           <span v-if="rule.patterns.length">
             {{
-              $t('routing.rules.patternCount', { count: rule.patterns.length })
+              $t('admin.routing.rules.patternCount', {
+                count: rule.patterns.length,
+              })
             }}
           </span>
           <span v-if="rule.addresses.length">
             {{
-              $t('routing.rules.addressCount', {
+              $t('admin.routing.rules.addressCount', {
                 count: rule.addresses.length,
               })
             }}
           </span>
-          <span :title="$t('routing.rules.matchedTitle')">
-            {{ $t('routing.rules.matched', { count: rule.addressCount }) }}
+          <span :title="$t('admin.routing.rules.matchedTitle')">
+            {{
+              $t('admin.routing.rules.matched', { count: rule.addressCount })
+            }}
           </span>
           <span>
             {{
               rule.clients.length
-                ? $t('routing.rules.someClients', {
+                ? $t('admin.routing.rules.someClients', {
                     count: rule.clients.length,
                   })
-                : $t('routing.rules.allClients')
+                : $t('admin.routing.rules.allClients')
             }}
           </span>
         </p>
 
         <div v-if="rule.patterns.length" class="mt-2 flex flex-wrap gap-2">
           <BaseSecondaryButton
-            class="px-2 py-1 text-sm"
+            class="min-h-9 px-3 py-1.5 text-xs"
             @click="resolveNow(rule)"
-            >{{ $t('routing.rules.resolve') }}</BaseSecondaryButton
           >
+            {{ $t('admin.routing.rules.resolve') }}
+          </BaseSecondaryButton>
           <BaseSecondaryButton
-            class="px-2 py-1 text-sm"
+            class="min-h-9 px-3 py-1.5 text-xs"
             @click="clearAddresses(rule)"
-            >{{ $t('routing.rules.clear') }}</BaseSecondaryButton
           >
+            {{ $t('admin.routing.rules.clear') }}
+          </BaseSecondaryButton>
         </div>
       </li>
     </ul>
 
-    <p v-else class="text-sm text-gray-500 dark:text-neutral-400">
-      {{ $t('routing.rules.empty') }}
+    <p v-else class="text-sm text-subtle">
+      {{ $t('admin.routing.rules.empty') }}
     </p>
   </div>
 </template>
@@ -147,17 +151,23 @@ const { t } = useI18n();
 const dragIndex = ref<number | null>(null);
 
 function actionLabel(rule: RoutingRule) {
-  if (rule.action === 'direct') return t('routing.action.direct');
-  if (rule.action === 'block') return t('routing.action.block');
-  return rule.gateway?.name ?? t('routing.action.missingGateway');
+  if (rule.action === 'direct') {
+    return t('admin.routing.action.direct');
+  }
+  if (rule.action === 'block') {
+    return t('admin.routing.action.block');
+  }
+  return rule.gateway?.name ?? t('admin.routing.action.missingGateway');
 }
 
 function actionClass(rule: RoutingRule) {
-  if (rule.action === 'direct')
-    return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
-  if (rule.action === 'block')
-    return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
-  return 'bg-gray-100 text-gray-700 dark:bg-neutral-600 dark:text-neutral-200';
+  if (rule.action === 'direct') {
+    return 'bg-success/10 text-success';
+  }
+  if (rule.action === 'block') {
+    return 'bg-accent/10 text-accent';
+  }
+  return 'bg-surface-raised text-muted';
 }
 
 const refresh = async () => emit('changed');
@@ -172,7 +182,9 @@ const reorder = useSubmit(
 );
 
 function move(from: number, to: number) {
-  if (to < 0 || to >= props.rules.length) return;
+  if (to < 0 || to >= props.rules.length) {
+    return;
+  }
 
   const ids = props.rules.map((rule) => rule.id);
   const [moved] = ids.splice(from, 1);
@@ -184,7 +196,9 @@ function move(from: number, to: number) {
 function drop(index: number) {
   const from = dragIndex.value;
   dragIndex.value = null;
-  if (from === null || from === index) return;
+  if (from === null || from === index) {
+    return;
+  }
   return move(from, index);
 }
 
@@ -219,7 +233,7 @@ const destroy = useSubmit(
     $fetch(`/api/admin/routing/rule/${(data as { id: number }).id}`, {
       method: 'delete',
     }),
-  { revert: refresh, successMsg: t('routing.rules.removed') }
+  { revert: refresh, successMsg: t('admin.routing.rules.removed') }
 );
 
 function remove(rule: RoutingRule) {
@@ -240,17 +254,19 @@ const resolve = useSubmit<{ added: number; failed: string[] }>(
     // whole reason someone pressed the button.
     revert: async (success, result) => {
       await refresh();
-      if (!success || !result) return;
+      if (!success || !result) {
+        return;
+      }
 
       if (result.added > 0) {
         toast.showToast({
           type: 'success',
-          message: t('routing.rules.resolved', { added: result.added }),
+          message: t('admin.routing.rules.resolved', { added: result.added }),
         });
       } else if (result.failed.length > 0) {
         toast.showToast({
           type: 'error',
-          message: t('routing.rules.resolvedNothing', {
+          message: t('admin.routing.rules.resolvedNothing', {
             domains: result.failed.join(', '),
           }),
         });
@@ -258,7 +274,7 @@ const resolve = useSubmit<{ added: number; failed: string[] }>(
         // Only wildcards, which have nothing literal to look up.
         toast.showToast({
           type: 'success',
-          message: t('routing.rules.resolvedWildcards'),
+          message: t('admin.routing.rules.resolvedWildcards'),
         });
       }
     },
@@ -274,7 +290,7 @@ const clear = useSubmit(
     $fetch(`/api/admin/routing/rule/${(data as { id: number }).id}/clear`, {
       method: 'post',
     }),
-  { revert: refresh, successMsg: t('routing.rules.cleared') }
+  { revert: refresh, successMsg: t('admin.routing.rules.cleared') }
 );
 
 function clearAddresses(rule: RoutingRule) {

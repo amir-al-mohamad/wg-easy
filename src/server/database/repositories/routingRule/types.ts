@@ -9,27 +9,27 @@ import {
   EnabledSchema,
   safeStringRefine,
   t,
-} from '#server/utils/types';
+} from '#shared/contracts/validation';
 import { parsePattern } from '#shared/utils/pattern';
 
 export type RoutingRuleType = InferSelectModel<typeof routingRule>;
 
 export const RoutingActionSchema = z.enum(['gateway', 'direct', 'block'], {
-  message: t('zod.routingRule.action'),
+  message: t('validation.routingRule.action'),
 });
 
 export type RoutingAction = z.infer<typeof RoutingActionSchema>;
 
 const NameSchema = z
-  .string({ message: t('zod.routingRule.name') })
-  .min(1, { message: t('zod.routingRule.name') })
-  .max(128, { message: t('zod.routingRule.name') })
+  .string({ message: t('validation.routingRule.name') })
+  .min(1, { message: t('validation.routingRule.name') })
+  .max(128, { message: t('validation.routingRule.name') })
   .pipe(safeStringRefine)
   .pipe(controlStringRefine);
 
 const DescriptionSchema = z
-  .string({ message: t('zod.routingRule.description') })
-  .max(512, { message: t('zod.routingRule.description') })
+  .string({ message: t('validation.routingRule.description') })
+  .max(512, { message: t('validation.routingRule.description') })
   .pipe(safeStringRefine)
   .pipe(controlStringRefine);
 
@@ -40,13 +40,13 @@ const DescriptionSchema = z
  */
 const PatternsSchema = z.array(
   z
-    .string({ message: t('zod.routingRule.pattern') })
+    .string({ message: t('validation.routingRule.pattern') })
     .transform((value) => parsePattern(value))
     .refine((parsed) => parsed !== null, {
-      message: t('zod.routingRule.patternInvalid'),
+      message: t('validation.routingRule.patternInvalid'),
     })
     .transform((parsed) => parsed!.pattern),
-  { message: t('zod.routingRule.patterns') }
+  { message: t('validation.routingRule.patterns') }
 );
 
 /**
@@ -58,21 +58,21 @@ const PatternsSchema = z.array(
  */
 const AddressesSchema = z.array(
   z
-    .string({ message: t('zod.routingRule.address') })
+    .string({ message: t('validation.routingRule.address') })
     .transform((value) => canonical(value))
     .refine((entry) => entry !== null, {
-      message: t('zod.routingRule.addressInvalid'),
+      message: t('validation.routingRule.addressInvalid'),
     })
     .transform((entry) => entry!.address),
-  { message: t('zod.routingRule.addresses') }
+  { message: t('validation.routingRule.addresses') }
 );
 
 const ClientIdsSchema = z.array(
   z
-    .number({ message: t('zod.routingRule.clients') })
+    .number({ message: t('validation.routingRule.clients') })
     .int()
     .positive(),
-  { message: t('zod.routingRule.clients') }
+  { message: t('validation.routingRule.clients') }
 );
 
 const RoutingRuleBaseSchema = z.object({
@@ -98,11 +98,11 @@ function refineRule<T extends z.ZodType<z.infer<typeof RoutingRuleBaseSchema>>>(
 ) {
   return schema
     .refine((rule) => rule.action !== 'gateway' || rule.gatewayId !== null, {
-      message: t('zod.routingRule.gatewayRequired'),
+      message: t('validation.routingRule.gatewayRequired'),
       path: ['gatewayId'],
     })
     .refine((rule) => rule.patterns.length > 0 || rule.addresses.length > 0, {
-      message: t('zod.routingRule.empty'),
+      message: t('validation.routingRule.empty'),
       path: ['patterns'],
     });
 }
@@ -112,15 +112,15 @@ export const RoutingRuleUpdateSchema = refineRule(RoutingRuleBaseSchema);
 
 export const RoutingRuleReorderSchema = z.array(
   z
-    .number({ message: t('zod.routingRule.order') })
+    .number({ message: t('validation.routingRule.order') })
     .int()
     .positive(),
-  { message: t('zod.routingRule.order') }
+  { message: t('validation.routingRule.order') }
 );
 
 export type RoutingRuleCreateType = z.infer<typeof RoutingRuleCreateSchema>;
 export type RoutingRuleUpdateType = z.infer<typeof RoutingRuleUpdateSchema>;
 
-const ruleId = z.coerce.number({ message: t('zod.routingRule.id') });
+const ruleId = z.coerce.number({ message: t('validation.routingRule.id') });
 
 export const RoutingRuleGetSchema = z.object({ ruleId });

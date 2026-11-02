@@ -4,7 +4,7 @@ import z from 'zod';
 
 import type { routingConfig } from './schema';
 
-import { EnabledSchema, t } from '#server/utils/types';
+import { EnabledSchema, t } from '#shared/contracts/validation';
 import { RoutingActionSchema } from '#db/repositories/routingRule/types';
 
 export type RoutingConfigType = InferSelectModel<typeof routingConfig>;
@@ -16,14 +16,14 @@ export type RoutingConfigType = InferSelectModel<typeof routingConfig>;
 const DnsUpstreamsSchema = z
   .array(
     z
-      .string({ message: t('zod.routingConfig.dnsUpstreams') })
+      .string({ message: t('validation.routingConfig.dnsUpstreams') })
       .trim()
       .refine((value) => isIP(value), {
-        message: t('zod.routingConfig.dnsUpstreamsInvalid'),
+        message: t('validation.routingConfig.dnsUpstreamsInvalid'),
       }),
-    { message: t('zod.routingConfig.dnsUpstreams') }
+    { message: t('validation.routingConfig.dnsUpstreams') }
   )
-  .min(1, { message: t('zod.routingConfig.dnsUpstreams') });
+  .min(1, { message: t('validation.routingConfig.dnsUpstreams') });
 
 export const RoutingConfigUpdateSchema = z
   .object({
@@ -36,7 +36,7 @@ export const RoutingConfigUpdateSchema = z
     (config) =>
       config.defaultAction !== 'gateway' || config.defaultGatewayId !== null,
     {
-      message: t('zod.routingConfig.gatewayRequired'),
+      message: t('validation.routingConfig.gatewayRequired'),
       path: ['defaultGatewayId'],
     }
   );

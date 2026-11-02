@@ -55,10 +55,14 @@ export async function listInterfaces(
 
   for (const line of output.split('\n')) {
     const match = LINK_LINE.exec(line.trim());
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
 
     const [, name, flags] = match;
-    if (!name || reserved.includes(name)) continue;
+    if (!name || reserved.includes(name)) {
+      continue;
+    }
 
     interfaces.push({
       name,
@@ -105,7 +109,9 @@ export async function defaultRoutes(
     // and `throw default metric 200` are the only shapes we ever put there.
     for (const line of output.split('\n')) {
       const tokens = line.trim().split(/\s+/);
-      if (!tokens.includes('default')) continue;
+      if (!tokens.includes('default')) {
+        continue;
+      }
 
       const dev = tokens.indexOf('dev');
       const metric = tokens.indexOf('metric');
@@ -260,7 +266,9 @@ export function parsePeers(dumpOutput: string): WireGuardPeers {
 
   for (const peer of dumpPeers(dumpOutput)) {
     handshakes.set(peer.key, peer.handshake);
-    if (peer.keepalive !== null) keepalive.set(peer.key, peer.keepalive);
+    if (peer.keepalive !== null) {
+      keepalive.set(peer.key, peer.keepalive);
+    }
   }
 
   return { keepalive, handshakes };
@@ -286,15 +294,21 @@ export function handshakeAge(
   peers: WireGuardPeers | null,
   now = Math.floor(Date.now() / 1000)
 ): number | null {
-  if (!peers) return null;
+  if (!peers) {
+    return null;
+  }
 
   let newest: number | null = null;
   for (const key of peers.keepalive.keys()) {
     const epoch = peers.handshakes.get(key) ?? 0;
-    if (newest === null || epoch > newest) newest = epoch;
+    if (newest === null || epoch > newest) {
+      newest = epoch;
+    }
   }
 
-  if (newest === null) return null;
+  if (newest === null) {
+    return null;
+  }
   return newest === 0 ? Number.POSITIVE_INFINITY : Math.max(0, now - newest);
 }
 
@@ -316,7 +330,9 @@ export function handshakeStale(age: number | null) {
  */
 export async function rehandshake(name: string): Promise<void> {
   const found = await dump(name);
-  if (!found) throw new Error(`${name} is not a WireGuard link`);
+  if (!found) {
+    throw new Error(`${name} is not a WireGuard link`);
+  }
   const { tool } = found;
 
   for (const peer of dumpPeers(found.output)) {
@@ -364,8 +380,12 @@ export async function awaitHandshake(
   const started = Date.now();
   for (;;) {
     const age = handshakeAge(await wireguardPeers(name));
-    if (age === null || age <= 5) return true;
-    if (Date.now() - started >= timeoutMs) return false;
+    if (age === null || age <= 5) {
+      return true;
+    }
+    if (Date.now() - started >= timeoutMs) {
+      return false;
+    }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 }

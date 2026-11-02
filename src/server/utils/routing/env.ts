@@ -32,7 +32,9 @@ export function parseForwardPorts(
 
   for (const raw of value.split(',')) {
     const entry = raw.trim();
-    if (!entry) continue;
+    if (!entry) {
+      continue;
+    }
 
     const match = /^(\d{1,5})(?:\s*-\s*(\d{1,5}))?$/.exec(entry);
     if (!match) {
@@ -86,7 +88,9 @@ export function readForwardPorts(
   const specs: PortSpec[] = [];
 
   const list = env.ROUTER_FORWARD_PORTS;
-  if (list) specs.push(...parseForwardPorts(list));
+  if (list) {
+    specs.push(...parseForwardPorts(list));
+  }
 
   const start = env.ROUTER_FORWARD_PORT_START;
   const end = env.ROUTER_FORWARD_PORT_END;
@@ -107,7 +111,9 @@ export function readForwardPorts(
 
   // In the order declared: the list is shown back to the operator, and the
   // order they chose is the one they will recognise.
-  if (specs.length === 0 && list === undefined) specs.push(DEFAULT_RANGE);
+  if (specs.length === 0 && list === undefined) {
+    specs.push(DEFAULT_RANGE);
+  }
   return specs;
 }
 

@@ -31,7 +31,9 @@ watch(
 );
 
 function toggle(next: boolean | undefined) {
-  if (next === undefined) return;
+  if (next === undefined) {
+    return;
+  }
   enabled.value = next;
   emit('update:modelValue', next);
 }

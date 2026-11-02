@@ -2,12 +2,9 @@ import { createDebug } from 'obug';
 import packageJson from '@@/package.json';
 
 import { exec } from '#server/utils/cmd';
+import { parseInterfaceName } from '#server/utils/interfaceName';
 import { parseTrustedProxies } from '#server/utils/trustedProxy';
-import {
-  OAUTH_PROVIDERS,
-  isConfiguredOauthProvider,
-  isValidOauthProvider,
-} from '#server/utils/oauth';
+import type { OAuthProvider } from '#shared/contracts/identity';
 
 export const RELEASE = 'v' + packageJson.version;
 
@@ -35,8 +32,80 @@ const detectAwg = async (): Promise<'awg' | 'wg'> => {
         .then(() => 'awg' as const)
         .catch(() => 'wg' as const);
     }
-  } else return 'wg';
+  } else {
+    return 'wg';
+  }
 };
+
+export type OAuthConfig = {
+  friendlyName: string;
+  server: string;
+  scope: string;
+  clientId: string | undefined;
+  clientSecret: string | undefined;
+  params: Record<string, string>;
+  isOIDC?: false;
+  userInfoFlow?: 'github';
+};
+
+type ConfiguredOAuthConfig = OAuthConfig & {
+  clientId: string;
+  clientSecret: string;
+};
+
+const GoogleConfig: OAuthConfig = {
+  friendlyName: 'Google',
+  server: 'https://accounts.google.com',
+  scope: 'openid email profile',
+  clientId: process.env.OAUTH_GOOGLE_CLIENT_ID,
+  clientSecret: process.env.OAUTH_GOOGLE_CLIENT_SECRET,
+  params: {
+    access_type: 'online',
+    prompt: 'select_account',
+  },
+};
+const GithubConfig: OAuthConfig = {
+  friendlyName: 'GitHub',
+  server: 'https://github.com/login/oauth',
+  scope: 'read:user user:email',
+  clientId: process.env.OAUTH_GITHUB_CLIENT_ID,
+  clientSecret: process.env.OAUTH_GITHUB_CLIENT_SECRET,
+  params: {
+    allow_signup: 'false',
+    prompt: 'select_account',
+  },
+  isOIDC: false,
+  userInfoFlow: 'github',
+};
+const OidcConfig: OAuthConfig = {
+  friendlyName: process.env.OAUTH_OIDC_NAME ?? 'OIDC',
+  server: process.env.OAUTH_OIDC_SERVER ?? '',
+  scope: 'openid email profile',
+  clientId: process.env.OAUTH_OIDC_CLIENT_ID,
+  clientSecret: process.env.OAUTH_OIDC_CLIENT_SECRET,
+  params: {},
+};
+
+export const OAUTH_PROVIDERS = {
+  google: GoogleConfig,
+  github: GithubConfig,
+  oidc: OidcConfig,
+} satisfies Record<OAuthProvider, OAuthConfig>;
+
+export function isValidOauthProvider(
+  provider: string
+): provider is OAuthProvider {
+  return Object.hasOwn(OAUTH_PROVIDERS, provider);
+}
+
+function isConfiguredOauthProvider(
+  oauthProvider: OAuthConfig
+): oauthProvider is ConfiguredOAuthConfig {
+  if (!oauthProvider.clientId || !oauthProvider.clientSecret) {
+    return false;
+  }
+  return true;
+}
 
 const oauthProviders = process.env.OAUTH_PROVIDERS?.split(',')
   .map((v) => v.trim())
@@ -50,6 +119,8 @@ export const WG_ENV = {
   PORT: assertEnv('PORT'),
   /** If IPv6 should be disabled */
   DISABLE_IPV6: process.env.DISABLE_IPV6 === 'true',
+  /** Name of the WireGuard interface */
+  WG_INTERFACE: parseInterfaceName(process.env.WG_INTERFACE),
   WG_EXECUTABLE: await detectAwg(),
   DISABLE_VERSION_CHECK: process.env.DISABLE_VERSION_CHECK === 'true',
   /** List of enabled and configured OAuth providers */

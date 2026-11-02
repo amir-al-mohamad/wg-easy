@@ -2,7 +2,11 @@ import { describe, expect, test } from 'vitest';
 
 import { isolationRules } from '#server/utils/firewall';
 
-const wgInterface = { ipv4Cidr: '10.8.0.0/24', ipv6Cidr: 'fdcc:ad94::/64' };
+const wgInterface = {
+  name: 'wg0',
+  ipv4Cidr: '10.8.0.0/24',
+  ipv6Cidr: 'fdcc:ad94::/64',
+};
 
 function client(
   id: number,
@@ -60,10 +64,10 @@ describe('isolationRules', () => {
     // The subnet, not a list of clients: it covers clients added later. The
     // server's own address is not affected, as traffic to it is not forwarded.
     expect(v4).toContain(
-      `-A WG_CLIENTS -s 10.8.0.2 -d 10.8.0.0/24 -m comment --comment "isolated client 1" -j DROP`
+      `-A WG_CLIENTS_wg0 -s 10.8.0.2 -d 10.8.0.0/24 -m comment --comment "isolated client 1" -j DROP`
     );
     expect(v4).toContain(
-      `-A WG_CLIENTS -s 10.8.0.0/24 -d 10.8.0.2 -m comment --comment "isolated client 1" -j DROP`
+      `-A WG_CLIENTS_wg0 -s 10.8.0.0/24 -d 10.8.0.2 -m comment --comment "isolated client 1" -j DROP`
     );
     expect(v6.some((r) => r.includes('-d fdcc:ad94::/64'))).toBe(true);
   });

@@ -1,7 +1,6 @@
-import { definePermissionEventHandler } from '#server/utils/handler';
-import { cachedGetIpInformation } from '#server/utils/ip';
+import * as system from '#server/features/system';
+import { defineAuthenticatedEventHandler } from '#server/utils/handler';
 
-export default definePermissionEventHandler('admin', 'any', async () => {
-  const result = await cachedGetIpInformation();
-  return result;
+export default defineAuthenticatedEventHandler(async ({ user }) => {
+  return system.ipInformation(user);
 });

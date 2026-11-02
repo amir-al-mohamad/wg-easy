@@ -51,7 +51,9 @@ function normalize(raw: string) {
 function countStars(value: string) {
   let stars = 0;
   for (const character of value) {
-    if (character === '*') stars++;
+    if (character === '*') {
+      stars++;
+    }
   }
   return stars;
 }
@@ -102,8 +104,12 @@ export function parsePattern(raw: string): ParsedPattern | null {
   }
 
   if (stars === 1) {
-    if (pattern.startsWith('*')) return { pattern, kind: 'endsWith' };
-    if (pattern.endsWith('*')) return { pattern, kind: 'startsWith' };
+    if (pattern.startsWith('*')) {
+      return { pattern, kind: 'endsWith' };
+    }
+    if (pattern.endsWith('*')) {
+      return { pattern, kind: 'startsWith' };
+    }
   }
 
   if (stars === 2 && pattern.startsWith('*') && pattern.endsWith('*')) {
@@ -123,10 +129,14 @@ function globToRegExp(pattern: string) {
 /** Whether `domain` matches `pattern`. An unparsable pattern matches nothing. */
 export function matchesPattern(domain: string, pattern: string): boolean {
   const parsed = parsePattern(pattern);
-  if (!parsed) return false;
+  if (!parsed) {
+    return false;
+  }
 
   const name = normalize(domain);
-  if (name.length === 0) return false;
+  if (name.length === 0) {
+    return false;
+  }
 
   switch (parsed.kind) {
     case 'any':
@@ -163,7 +173,9 @@ export function matchesAny(
  */
 export function resolvableDomains(pattern: string): string[] {
   const parsed = parsePattern(pattern);
-  if (!parsed) return [];
+  if (!parsed) {
+    return [];
+  }
 
   switch (parsed.kind) {
     case 'exact':

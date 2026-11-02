@@ -231,7 +231,9 @@ function removeStaleRules(
       ? plan.installedRules.v6
       : plan.installedRules.v4;
     for (const rule of installed) {
-      if (kept.has(ruleKey(rule))) continue;
+      if (kept.has(ruleKey(rule))) {
+        continue;
+      }
 
       out.push(
         removeAll(
@@ -306,7 +308,9 @@ function buildTeardown(plan: Plan): string[] {
  *    first match wins; without the guard a later `-j MARK` overwrites it.
  */
 export function buildPlan(plan: Plan): string[] {
-  if (isEmpty(plan)) return buildTeardown(plan);
+  if (isEmpty(plan)) {
+    return buildTeardown(plan);
+  }
 
   const out: string[] = [];
   const families: Family[] = plan.enableIpv6 ? [V4, V6] : [V4];
@@ -358,7 +362,9 @@ export function buildPlan(plan: Plan): string[] {
 
       // Slots a shorter chain no longer uses, deleted by metric alone.
       for (const metric of installedMetrics) {
-        if (wantedMetrics.has(metric)) continue;
+        if (wantedMetrics.has(metric)) {
+          continue;
+        }
         out.push(
           quiet(
             `${family.ip} route del default table ${table} metric ${metric}`
@@ -375,7 +381,9 @@ export function buildPlan(plan: Plan): string[] {
     );
 
     for (const rule of keep) {
-      if (!installed.has(ruleKey(rule))) out.push(ruleAdd(family, rule));
+      if (!installed.has(ruleKey(rule))) {
+        out.push(ruleAdd(family, rule));
+      }
     }
   }
 
@@ -440,7 +448,9 @@ export function buildPlan(plan: Plan): string[] {
     rebuildChain(out, family, 'mangle', CHAIN_MSS, 'FORWARD');
 
     for (const gateway of plan.gateways) {
-      if (!usable(gateway, family)) continue;
+      if (!usable(gateway, family)) {
+        continue;
+      }
       out.push(
         `${ipt} -A ${CHAIN_MSS} -o ${gateway.interfaceName} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu`
       );
@@ -455,7 +465,9 @@ export function buildPlan(plan: Plan): string[] {
     rebuildChain(out, family, 'nat', CHAIN_NAT, 'POSTROUTING');
 
     for (const gateway of plan.gateways) {
-      if (!usable(gateway, family)) continue;
+      if (!usable(gateway, family)) {
+        continue;
+      }
       out.push(
         `${ipt} -A ${CHAIN_NAT} -o ${gateway.interfaceName} -j MASQUERADE`
       );
@@ -483,7 +495,9 @@ export function buildPlan(plan: Plan): string[] {
     // "through a gateway" would send them out the tunnel.
     for (const forward of plan.forwards) {
       const address = family.v6 ? forward.clientIpv6 : forward.clientIpv4;
-      if (!address) continue;
+      if (!address) {
+        continue;
+      }
 
       const destination = family.v6
         ? `[${address}]:${forward.internalPort}`
@@ -557,7 +571,9 @@ function endForwardConnections(
   const conntrack = `conntrack -f ${family.v6 ? 'ipv6' : 'ipv4'} -D`;
 
   for (const forward of forwards) {
-    if (!(family.v6 ? forward.clientIpv6 : forward.clientIpv4)) continue;
+    if (!(family.v6 ? forward.clientIpv6 : forward.clientIpv4)) {
+      continue;
+    }
 
     for (const protocol of forward.protocols) {
       out.push(

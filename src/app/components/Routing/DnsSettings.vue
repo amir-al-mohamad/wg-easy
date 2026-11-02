@@ -4,21 +4,21 @@
       <RoutingToggleSwitch
         id="dns-intercept"
         :model-value="config.dnsInterceptEnabled"
-        :title="$t('routing.dnsSettings.intercept')"
+        :title="$t('admin.routing.dnsSettings.intercept')"
         @update:model-value="setIntercept"
       />
       <RoutingLabel for="dns-intercept">
-        {{ $t('routing.dnsSettings.intercept') }}
+        {{ $t('admin.routing.dnsSettings.intercept') }}
       </RoutingLabel>
     </div>
 
-    <p class="max-w-prose text-sm text-gray-500 dark:text-neutral-400">
-      {{ $t('routing.dnsSettings.interceptHelp') }}
+    <p class="max-w-prose text-xs text-subtle">
+      {{ $t('admin.routing.dnsSettings.interceptHelp') }}
     </p>
 
     <div v-if="config.dnsInterceptEnabled" class="flex flex-col gap-1">
       <RoutingLabel for="dns-upstreams">
-        {{ $t('routing.dnsSettings.upstreams') }}
+        {{ $t('admin.routing.dnsSettings.upstreams') }}
       </RoutingLabel>
       <div class="flex flex-wrap items-center gap-2">
         <BaseInput
@@ -32,34 +32,31 @@
           type="button"
           @click="saveUpstreams"
         >
-          {{ $t('form.save') }}
+          {{ $t('common.actions.save') }}
         </BasePrimaryButton>
       </div>
-      <p class="max-w-prose text-sm text-gray-500 dark:text-neutral-400">
-        {{ $t('routing.dnsSettings.upstreamsHelp') }}
+      <p class="max-w-prose text-xs text-subtle">
+        {{ $t('admin.routing.dnsSettings.upstreamsHelp') }}
       </p>
     </div>
 
     <div v-if="config.dnsInterceptEnabled" class="flex flex-col gap-1">
-      <span class="text-sm font-medium">
-        {{ $t('routing.dnsSettings.handedOut') }}
+      <span class="text-sm font-medium text-muted">
+        {{ $t('admin.routing.dnsSettings.handedOut') }}
       </span>
       <div class="flex flex-wrap items-center gap-3">
-        <span class="font-mono text-sm">
-          {{ dns.currentDefault.join(', ') || $t('routing.dns.none') }}
+        <span class="font-mono text-sm text-foreground">
+          {{ dns.currentDefault.join(', ') || $t('admin.routing.dns.none') }}
         </span>
-        <span
-          v-if="dns.defaultUsesProxy"
-          class="text-sm text-gray-500 dark:text-neutral-400"
-        >
-          {{ $t('routing.dnsSettings.handedOutOk') }}
+        <span v-if="dns.defaultUsesProxy" class="text-sm text-success">
+          {{ $t('admin.routing.dnsSettings.handedOutOk') }}
         </span>
         <BasePrimaryButton v-else type="button" @click="emit('useProxy')">
-          {{ $t('routing.dns.fix') }}
+          {{ $t('admin.routing.dns.fix') }}
         </BasePrimaryButton>
       </div>
-      <p class="max-w-prose text-sm text-gray-500 dark:text-neutral-400">
-        {{ $t('routing.dnsSettings.handedOutHelp') }}
+      <p class="max-w-prose text-xs text-subtle">
+        {{ $t('admin.routing.dnsSettings.handedOutHelp') }}
       </p>
     </div>
   </div>
@@ -102,7 +99,7 @@ const save = useSubmit(
   (body) => $fetch('/api/admin/routing/config', { method: 'post', body }),
   {
     revert: async () => emit('changed'),
-    successMsg: t('routing.dnsSettings.saved'),
+    successMsg: t('admin.routing.dnsSettings.saved'),
   }
 );
 

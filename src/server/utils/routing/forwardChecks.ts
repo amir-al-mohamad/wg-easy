@@ -1,6 +1,6 @@
-import { createError } from 'h3';
+import { createError } from 'nuxt/server';
 
-import Database from '#server/utils/Database';
+import { getDatabase } from '#db';
 import { WG_ENV } from '#server/utils/config';
 
 /**
@@ -16,17 +16,17 @@ export async function assertForwardTarget(forward: {
   clientId: number;
   externalPort: number;
 }) {
-  const client = await Database.clients.get(forward.clientId);
+  const client = await getDatabase().clients.get(forward.clientId);
   if (!client) {
-    throw createError({ statusCode: 400, statusMessage: 'Client not found' });
+    throw createError({ status: 400, statusText: 'Client not found' });
   }
 
-  const wgInterface = await Database.interfaces.get();
+  const wgInterface = await getDatabase().interfaces.get();
   const reserved = [Number(WG_ENV.PORT), wgInterface.port];
   if (reserved.includes(forward.externalPort)) {
     throw createError({
-      statusCode: 400,
-      statusMessage: `Port ${forward.externalPort} is used by this server`,
+      status: 400,
+      statusText: `Port ${forward.externalPort} is used by this server`,
     });
   }
 }

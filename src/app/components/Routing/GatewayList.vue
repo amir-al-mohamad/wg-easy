@@ -4,7 +4,7 @@
       <li
         v-for="gateway in gateways"
         :key="gateway.id"
-        class="flex flex-wrap items-center gap-3 rounded-lg border-2 border-gray-100 p-3 dark:border-neutral-600"
+        class="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3"
       >
         <BaseTooltip :text="statusText(gateway)">
           <span
@@ -16,52 +16,54 @@
         <BaseInput
           :id="`gateway-name-${gateway.id}`"
           :model-value="gateway.name"
-          class="min-w-32 flex-1 py-1 text-sm"
-          :aria-label="$t('routing.gateways.name')"
+          class="min-h-9 min-w-32 flex-1 py-1.5"
+          :aria-label="$t('admin.routing.gateways.name')"
           @change="rename(gateway, $event)"
         />
 
-        <code
-          class="rounded bg-gray-100 px-2 py-1 text-xs dark:bg-neutral-600"
-          >{{ gateway.interfaceName }}</code
-        >
+        <code class="rounded-md bg-surface-raised px-2 py-1 text-xs text-muted">
+          {{ gateway.interfaceName }}
+        </code>
 
         <span
           v-if="ipv6Enabled && gateway.present && !gateway.hasIpv6"
-          class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-          :title="$t('routing.gateways.noIpv6Title')"
+          class="rounded-md bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
+          :title="$t('admin.routing.gateways.noIpv6Title')"
         >
-          {{ $t('routing.gateways.noIpv6') }}
+          {{ $t('admin.routing.gateways.noIpv6') }}
         </span>
 
         <span
-          class="font-mono text-xs text-gray-400 dark:text-neutral-400"
-          :title="$t('routing.gateways.markTitle')"
+          class="font-mono text-xs text-subtle"
+          :title="$t('admin.routing.gateways.markTitle')"
         >
           {{ gateway.fwmark }} · {{ gateway.routeTable }}
         </span>
 
         <label
-          class="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-400"
-          :title="$t('routing.gateways.unavailableTitle')"
+          class="flex items-center gap-2 text-xs text-subtle"
+          :title="$t('admin.routing.gateways.unavailableTitle')"
         >
-          {{ $t('routing.gateways.unavailable') }}
-          <RoutingSelect
+          {{ $t('admin.routing.gateways.unavailable') }}
+          <BaseSelect
             :id="`gateway-unavailable-${gateway.id}`"
             :model-value="gateway.unavailableAction"
             :options="unavailableOptions"
-            class="py-1 text-xs"
+            :label="$t('admin.routing.gateways.unavailable')"
+            :show-value="false"
+            compact
             @update:model-value="
               setUnavailable(gateway, $event as GatewayUnavailableAction)
             "
           />
-          <RoutingSelect
+          <BaseSelect
             v-if="gateway.unavailableAction === 'gateway'"
             :id="`gateway-fallback-${gateway.id}`"
-            :model-value="gateway.fallbackGatewayId"
+            :model-value="gateway.fallbackGatewayId ?? undefined"
             :options="fallbackOptions(gateway)"
-            class="py-1 text-xs"
-            :aria-label="$t('routing.gateways.fallback')"
+            :label="$t('admin.routing.gateways.fallback')"
+            :show-value="false"
+            compact
             @update:model-value="setFallback(gateway, Number($event))"
           />
         </label>
@@ -71,46 +73,50 @@
           :model-value="gateway.enabled"
           :title="
             gateway.enabled
-              ? $t('routing.gateways.disable')
-              : $t('routing.gateways.enable')
+              ? $t('admin.routing.gateways.disable')
+              : $t('admin.routing.gateways.enable')
           "
           @update:model-value="toggle(gateway, $event)"
         />
 
         <BaseSecondaryButton
           v-if="gateway.wireguard"
-          class="px-2 py-1 text-sm"
-          :title="$t('routing.gateways.reconnectTitle')"
+          class="min-h-9 px-3 py-1.5 text-xs"
+          :title="$t('admin.routing.gateways.reconnectTitle')"
           @click="reconnect(gateway)"
-          >{{ $t('routing.gateways.reconnect') }}</BaseSecondaryButton
         >
+          {{ $t('admin.routing.gateways.reconnect') }}
+        </BaseSecondaryButton>
 
         <BaseSecondaryButton
-          class="px-2 py-1 text-sm"
+          class="min-h-9 px-3 py-1.5 text-xs"
           @click="remove(gateway)"
-          >{{ $t('routing.remove') }}</BaseSecondaryButton
         >
+          {{ $t('admin.routing.remove') }}
+        </BaseSecondaryButton>
       </li>
     </ul>
 
-    <p v-else class="text-sm text-gray-500 dark:text-neutral-400">
-      {{ $t('routing.gateways.empty') }}
+    <p v-else class="text-sm text-subtle">
+      {{ $t('admin.routing.gateways.empty') }}
     </p>
 
     <div
       v-if="available.length"
-      class="mt-4 rounded-lg border-2 border-dashed border-gray-100 p-3 dark:border-neutral-600"
+      class="mt-4 rounded-lg border border-dashed border-line p-3"
     >
-      <p class="mb-2 text-sm text-gray-500 dark:text-neutral-400">
-        {{ $t('routing.gateways.available') }}
+      <p class="mb-2 text-sm text-subtle">
+        {{ $t('admin.routing.gateways.available') }}
       </p>
       <ul class="flex flex-wrap gap-2">
         <li v-for="entry in available" :key="entry.name">
           <BaseSecondaryButton
-            class="px-3 py-1 text-sm"
+            class="min-h-9 px-3 py-1.5 text-xs"
             :class="{ 'opacity-60': !entry.suggested }"
             :title="
-              entry.suggested ? undefined : $t('routing.gateways.notSuggested')
+              entry.suggested
+                ? undefined
+                : $t('admin.routing.gateways.notSuggested')
             "
             @click="add(entry.name)"
           >
@@ -120,8 +126,8 @@
       </ul>
     </div>
 
-    <p v-else class="mt-4 text-sm text-gray-500 dark:text-neutral-400">
-      {{ $t('routing.gateways.noneAvailable') }}
+    <p v-else class="mt-4 text-sm text-subtle">
+      {{ $t('admin.routing.gateways.noneAvailable') }}
     </p>
   </div>
 </template>
@@ -149,10 +155,15 @@ function others(gateway: RoutingGateway) {
 
 // "Through another gateway" is only offered once there is another gateway.
 const unavailableOptions = computed(() => [
-  { value: 'block', label: t('routing.gateways.unavailableBlock') },
-  { value: 'direct', label: t('routing.gateways.unavailableDirect') },
+  { value: 'block', label: t('admin.routing.gateways.unavailableBlock') },
+  { value: 'direct', label: t('admin.routing.gateways.unavailableDirect') },
   ...(props.gateways.length > 1
-    ? [{ value: 'gateway', label: t('routing.gateways.unavailableGateway') }]
+    ? [
+        {
+          value: 'gateway',
+          label: t('admin.routing.gateways.unavailableGateway'),
+        },
+      ]
     : []),
 ]);
 
@@ -174,33 +185,41 @@ function fallbackName(gateway: RoutingGateway) {
 // Off, unavailable and dropping, unavailable but flowing: only the first is
 // on purpose and only the second stops traffic, so each gets its own colour.
 function statusColor(gateway: RoutingGateway) {
-  if (!gateway.enabled) return 'bg-gray-300 dark:bg-neutral-500';
-  if (gateway.present) return 'bg-green-500';
-  return gateway.unavailableOutcome === 'block' ? 'bg-red-500' : 'bg-amber-500';
+  if (!gateway.enabled) {
+    return 'bg-line';
+  }
+  if (gateway.present) {
+    return 'bg-success';
+  }
+  return gateway.unavailableOutcome === 'block' ? 'bg-accent' : 'bg-warning';
 }
 
 // Why the gateway is unavailable, then what happens to its traffic, judged by
 // what the chain amounts to rather than the setting alone: "through another
 // gateway" whose chain ends in dropping is reported as dropping.
 function statusText(gateway: RoutingGateway) {
-  if (!gateway.enabled) return t('routing.gateways.statusOff');
-  if (gateway.present) return t('routing.gateways.statusUp');
+  if (!gateway.enabled) {
+    return t('admin.routing.gateways.statusOff');
+  }
+  if (gateway.present) {
+    return t('admin.routing.gateways.statusUp');
+  }
 
   const reason = gateway.stale
     ? gateway.handshakeAge === null
-      ? t('routing.gateways.statusNeverAnswered')
-      : t('routing.gateways.statusStale', {
+      ? t('admin.routing.gateways.statusNeverAnswered')
+      : t('admin.routing.gateways.statusStale', {
           minutes: Math.floor(gateway.handshakeAge / 60),
         })
-    : t('routing.gateways.statusDown');
+    : t('admin.routing.gateways.statusDown');
 
   switch (gateway.unavailableOutcome) {
     case 'block':
-      return `${reason} ${t('routing.gateways.statusBlock')}`;
+      return `${reason} ${t('admin.routing.gateways.statusBlock')}`;
     case 'direct':
-      return `${reason} ${t('routing.gateways.statusDirect')}`;
+      return `${reason} ${t('admin.routing.gateways.statusDirect')}`;
     case 'gateway':
-      return `${reason} ${t('routing.gateways.statusFallback', {
+      return `${reason} ${t('admin.routing.gateways.statusFallback', {
         name: fallbackName(gateway),
       })}`;
   }
@@ -224,10 +243,13 @@ const bounce = useSubmit(
       if (success) {
         toast.showToast(
           data?.answered
-            ? { type: 'success', message: t('routing.gateways.reconnected') }
+            ? {
+                type: 'success',
+                message: t('admin.routing.gateways.reconnected'),
+              }
             : {
                 type: 'error',
-                message: t('routing.gateways.reconnectNoAnswer'),
+                message: t('admin.routing.gateways.reconnectNoAnswer'),
               }
         );
       }
@@ -277,7 +299,9 @@ function setUnavailable(
   gateway: RoutingGateway,
   unavailableAction: GatewayUnavailableAction
 ) {
-  if (unavailableAction === gateway.unavailableAction) return;
+  if (unavailableAction === gateway.unavailableAction) {
+    return;
+  }
   // "Through another gateway" needs one named to be saved at all; start with
   // the first other one, which the second select then lets the reader change.
   const fallbackGatewayId =
@@ -288,20 +312,24 @@ function setUnavailable(
 }
 
 function setFallback(gateway: RoutingGateway, fallbackGatewayId: number) {
-  if (fallbackGatewayId === gateway.fallbackGatewayId) return;
+  if (fallbackGatewayId === gateway.fallbackGatewayId) {
+    return;
+  }
   return update(gateway, { fallbackGatewayId });
 }
 
 function rename(gateway: RoutingGateway, event: Event) {
   const name = (event.target as HTMLInputElement).value.trim();
-  if (!name || name === gateway.name) return;
+  if (!name || name === gateway.name) {
+    return;
+  }
   return update(gateway, { name });
 }
 
 const create = useSubmit(
   (data) =>
     $fetch('/api/admin/routing/gateway', { method: 'post', body: data }),
-  { revert: refresh, successMsg: t('routing.gateways.added') }
+  { revert: refresh, successMsg: t('admin.routing.gateways.added') }
 );
 
 function add(interfaceName: string) {
@@ -313,7 +341,7 @@ const destroy = useSubmit(
     $fetch(`/api/admin/routing/gateway/${(data as { id: number }).id}`, {
       method: 'delete',
     }),
-  { revert: refresh, successMsg: t('routing.gateways.removed') }
+  { revert: refresh, successMsg: t('admin.routing.gateways.removed') }
 );
 
 function remove(gateway: RoutingGateway) {
