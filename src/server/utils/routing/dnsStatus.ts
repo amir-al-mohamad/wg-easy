@@ -3,10 +3,26 @@ import { stringifyIp } from 'ip-bigint';
 
 import { isDnsProxyListening } from './dns';
 
-import type { DnsStatus } from '#shared/utils/routingTypes';
 import type { ClientType } from '#db/repositories/client/types';
 import type { InterfaceType } from '#db/repositories/interface/types';
 import type { UserConfigType } from '#db/repositories/userConfig/types';
+
+export type DnsStatus = {
+  /** Addresses clients should be pointed at. */
+  serverAddresses: { ipv4: string; ipv6: string };
+  /** Whether the default handed to clients already points here. */
+  defaultUsesProxy: boolean;
+  /** What the default currently is, for showing what would change. */
+  currentDefault: string[];
+  /** Whether the proxy is actually bound, as opposed to merely switched on. */
+  listening: boolean;
+  /**
+   * Clients that override the default with their own resolver. These keep
+   * bypassing the proxy even after the default is fixed, so they are named
+   * rather than silently rewritten.
+   */
+  clientsBypassing: { id: number; name: string; dns: string[] }[];
+};
 
 /**
  * Whether clients will actually send their lookups to the built-in proxy.

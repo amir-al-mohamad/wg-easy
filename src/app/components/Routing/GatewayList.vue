@@ -52,9 +52,7 @@
             :label="$t('admin.routing.gateways.unavailable')"
             :show-value="false"
             compact
-            @update:model-value="
-              setUnavailable(gateway, $event as GatewayUnavailableAction)
-            "
+            @update:model-value="setUnavailable(gateway, $event)"
           />
           <BaseSelect
             v-if="gateway.unavailableAction === 'gateway'"
@@ -64,7 +62,7 @@
             :label="$t('admin.routing.gateways.fallback')"
             :show-value="false"
             compact
-            @update:model-value="setFallback(gateway, Number($event))"
+            @update:model-value="setFallback(gateway, $event)"
           />
         </label>
 
@@ -133,10 +131,7 @@
 </template>
 
 <script lang="ts" setup>
-import type {
-  GatewayUnavailableAction,
-  RoutingGateway,
-} from '#shared/utils/routingTypes';
+import type { UnavailableAction } from '#shared/utils/routing';
 
 const props = defineProps<{
   ipv6Enabled: boolean;
@@ -154,18 +149,19 @@ function others(gateway: RoutingGateway) {
 }
 
 // "Through another gateway" is only offered once there is another gateway.
-const unavailableOptions = computed(() => [
-  { value: 'block', label: t('admin.routing.gateways.unavailableBlock') },
-  { value: 'direct', label: t('admin.routing.gateways.unavailableDirect') },
-  ...(props.gateways.length > 1
-    ? [
-        {
-          value: 'gateway',
-          label: t('admin.routing.gateways.unavailableGateway'),
-        },
-      ]
-    : []),
-]);
+const unavailableOptions = computed(() => {
+  const options: { value: UnavailableAction; label: string }[] = [
+    { value: 'block', label: t('admin.routing.gateways.unavailableBlock') },
+    { value: 'direct', label: t('admin.routing.gateways.unavailableDirect') },
+  ];
+  if (props.gateways.length > 1) {
+    options.push({
+      value: 'gateway',
+      label: t('admin.routing.gateways.unavailableGateway'),
+    });
+  }
+  return options;
+});
 
 // A switched-off gateway ends a chain in dropping, so it is not offered; one
 // already chosen and since switched off stays visible rather than vanishing.
@@ -232,11 +228,10 @@ const toast = useToast();
 // The reconnect itself always happens; whether the far end answered within
 // the wait is what the reader needs to hear, so the toast is chosen here.
 const bounce = useSubmit(
-  (data) =>
-    $fetch(
-      `/api/admin/routing/gateway/${(data as { id: number }).id}/reconnect`,
-      { method: 'post' }
-    ),
+  (gateway: { id: number }) =>
+    $fetch(`/api/admin/routing/gateway/${gateway.id}/reconnect`, {
+      method: 'post',
+    }),
   {
     noSuccessToast: true,
     revert: async (success, data) => {
@@ -263,23 +258,20 @@ function reconnect(gateway: RoutingGateway) {
 }
 
 const save = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/gateway/${(data as { id: number }).id}`, {
-      method: 'post',
-      body: data,
-    }),
+  ({ id, ...body }: GatewaySettings) =>
+    $fetch(`/api/admin/routing/gateway/${id}`, { method: 'post', body }),
   { revert: refresh, noSuccessToast: true }
 );
+
+type GatewaySettings = Pick<
+  RoutingGateway,
+  'id' | 'name' | 'enabled' | 'unavailableAction' | 'fallbackGatewayId'
+>;
 
 /** The endpoint takes the whole editable state, so send it with one change. */
 function update(
   gateway: RoutingGateway,
-  changes: Partial<
-    Pick<
-      RoutingGateway,
-      'name' | 'enabled' | 'unavailableAction' | 'fallbackGatewayId'
-    >
-  >
+  changes: Partial<Omit<GatewaySettings, 'id'>>
 ) {
   return save({
     id: gateway.id,
@@ -297,9 +289,9 @@ function toggle(gateway: RoutingGateway, enabled: boolean) {
 
 function setUnavailable(
   gateway: RoutingGateway,
-  unavailableAction: GatewayUnavailableAction
+  unavailableAction: UnavailableAction | undefined
 ) {
-  if (unavailableAction === gateway.unavailableAction) {
+  if (!unavailableAction || unavailableAction === gateway.unavailableAction) {
     return;
   }
   // "Through another gateway" needs one named to be saved at all; start with
@@ -311,8 +303,14 @@ function setUnavailable(
   return update(gateway, { unavailableAction, fallbackGatewayId });
 }
 
-function setFallback(gateway: RoutingGateway, fallbackGatewayId: number) {
-  if (fallbackGatewayId === gateway.fallbackGatewayId) {
+function setFallback(
+  gateway: RoutingGateway,
+  fallbackGatewayId: number | undefined
+) {
+  if (
+    fallbackGatewayId === undefined ||
+    fallbackGatewayId === gateway.fallbackGatewayId
+  ) {
     return;
   }
   return update(gateway, { fallbackGatewayId });
@@ -337,10 +335,8 @@ function add(interfaceName: string) {
 }
 
 const destroy = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/gateway/${(data as { id: number }).id}`, {
-      method: 'delete',
-    }),
+  (gateway: { id: number }) =>
+    $fetch(`/api/admin/routing/gateway/${gateway.id}`, { method: 'delete' }),
   { revert: refresh, successMsg: t('admin.routing.gateways.removed') }
 );
 

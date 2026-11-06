@@ -4,7 +4,7 @@
 
     <RoutingDnsNotice
       :dns="data.dns"
-      :intercept-enabled="data.config.dnsInterceptEnabled"
+      :proxy-enabled="data.config.dnsProxyEnabled"
       :has-domain-rules="hasDomainRules"
       @fix="() => enableProxyDns(null)"
     />
@@ -125,8 +125,6 @@
 </template>
 
 <script setup lang="ts">
-import type { PortForward, RoutingRule } from '#shared/utils/routingTypes';
-
 const { t } = useI18n();
 
 const { data, refresh } = await useFetch('/api/admin/routing', {
@@ -153,40 +151,35 @@ const saveConfig = useSubmit(
 const defaultAction = computed({
   get: () => {
     const config = data.value?.config;
-    if (!config) {
-      return 'direct';
-    }
-    return config.defaultAction === 'gateway'
-      ? `gateway:${config.defaultGatewayId ?? ''}`
-      : config.defaultAction;
+    return config
+      ? toActionChoice(config.defaultAction, config.defaultGatewayId)
+      : undefined;
   },
-  set: (value: string | number | null) => {
+  set: (choice: ActionChoice | undefined) => {
     const config = data.value?.config;
-    if (!config) {
+    if (!config || !choice) {
       return;
     }
 
-    const text = String(value);
-    const isGateway = text.startsWith('gateway:');
-
+    const { action, gatewayId } = fromActionChoice(choice);
     saveConfig({
       ...config,
-      defaultAction: isGateway ? 'gateway' : text,
-      defaultGatewayId: isGateway
-        ? Number(text.slice('gateway:'.length))
-        : null,
+      defaultAction: action,
+      defaultGatewayId: gatewayId,
     });
   },
 });
 
-const defaultOptions = computed(() => [
-  ...(data.value?.gateways ?? []).map((gateway) => ({
-    label: t('admin.routing.action.viaGateway', { name: gateway.name }),
-    value: `gateway:${gateway.id}`,
-  })),
-  { label: t('admin.routing.action.direct'), value: 'direct' },
-  { label: t('admin.routing.action.block'), value: 'block' },
-]);
+const defaultOptions = computed<{ label: string; value: ActionChoice }[]>(
+  () => [
+    ...(data.value?.gateways ?? []).map((gateway) => ({
+      label: t('admin.routing.action.viaGateway', { name: gateway.name }),
+      value: gatewayChoice(gateway.id),
+    })),
+    { label: t('admin.routing.action.direct'), value: 'direct' },
+    { label: t('admin.routing.action.block'), value: 'block' },
+  ]
+);
 
 // DNS
 

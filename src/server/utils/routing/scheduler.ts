@@ -1,7 +1,7 @@
 import { createDebug } from 'obug';
 
 import { applyRouting, presenceChanged } from './apply';
-import { addAddress, listAddresses } from './ipset';
+import { changeSets, listAddresses, type SetChange } from './ipset';
 import { withRoutingLock } from './lock';
 import { resolveRule } from './resolve';
 
@@ -97,13 +97,16 @@ async function resolvePass() {
 }
 
 /**
- * Keep addresses still in use from expiring mid-connection. An entry whose
- * packet counter moved since the last pass is guaranteed at least
- * {@link EXTEND_SECONDS} more, never less than it had (`ipset add -exist`
- * replaces the timeout rather than adding to it).
+ * Keep addresses still in use in their rule. Open connections keep their
+ * route regardless, but a client reconnects to an address it resolved long
+ * ago without asking again, and with no lookup to learn from the entry would
+ * expire under it. An entry whose packet counter moved since the last pass
+ * is guaranteed at least {@link EXTEND_SECONDS} more, never less than it had
+ * (`ipset add -exist` replaces the timeout rather than adding to it).
  */
 async function trafficPass() {
   const rules = await getDatabase().routingRules.getAll();
+  const extensions: SetChange[] = [];
 
   for (const rule of rules) {
     if (!rule.enabled) {
@@ -123,20 +126,24 @@ async function trafficPass() {
     }
 
     for (const entry of entries) {
+      // Permanent entries need no extending.
       if (entry.timeout === 0) {
         continue;
-      } // permanent already
+      }
       if (entry.packets <= (previous.get(entry.address) ?? 0)) {
         continue;
       }
 
-      await addAddress(
-        rule.id,
-        entry.address,
-        Math.max(entry.timeout, EXTEND_SECONDS)
-      );
+      extensions.push({
+        op: 'add',
+        ruleId: rule.id,
+        address: entry.address,
+        timeout: Math.max(entry.timeout, EXTEND_SECONDS),
+      });
     }
   }
+
+  await changeSets(extensions);
 
   for (const id of lastPacketCount.keys()) {
     if (!rules.some((rule) => rule.id === id)) {

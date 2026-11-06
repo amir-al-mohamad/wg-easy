@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 
 import { routingConfig } from './schema';
-import type { RoutingConfigUpdateType } from './types';
 
+import type { RoutingConfigUpdateType } from '#shared/contracts/routingConfig';
 import type { DBExecutor } from '#db/types';
 
 const SINGLETON_ID = 1;

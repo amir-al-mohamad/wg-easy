@@ -3,12 +3,12 @@ import { readValidatedBody } from 'nuxt/server';
 import * as routing from '#server/features/routing';
 import { defineAuthenticatedEventHandler } from '#server/utils/handler';
 import { validateZod } from '#server/http/validation';
-import { RoutingRuleCreateSchema } from '#db/repositories/routingRule/types';
+import { RoutingRuleSchema } from '#shared/contracts/routingRule';
 
 export default defineAuthenticatedEventHandler(async ({ event, user }) => {
   const data = await readValidatedBody(
     event,
-    validateZod(RoutingRuleCreateSchema, event)
+    validateZod(RoutingRuleSchema, event)
   );
 
   await routing.createRule(user, data);

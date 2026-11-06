@@ -140,7 +140,7 @@
 </template>
 
 <script lang="ts" setup>
-import type { RoutingRule } from '#shared/utils/routingTypes';
+import type { RoutingRuleInputType } from '#shared/contracts/routingRule';
 
 const props = defineProps<{ rules: RoutingRule[] }>();
 
@@ -173,11 +173,8 @@ function actionClass(rule: RoutingRule) {
 const refresh = async () => emit('changed');
 
 const reorder = useSubmit(
-  (data) =>
-    $fetch('/api/admin/routing/rule/order', {
-      method: 'post',
-      body: (data as { ids: number[] }).ids,
-    }),
+  (ids: number[]) =>
+    $fetch('/api/admin/routing/rule/order', { method: 'post', body: ids }),
   { revert: refresh, noSuccessToast: true }
 );
 
@@ -190,7 +187,7 @@ function move(from: number, to: number) {
   const [moved] = ids.splice(from, 1);
   ids.splice(to, 0, moved!);
 
-  return reorder({ ids });
+  return reorder(ids);
 }
 
 function drop(index: number) {
@@ -203,11 +200,8 @@ function drop(index: number) {
 }
 
 const save = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/rule/${(data as { id: number }).id}`, {
-      method: 'post',
-      body: data,
-    }),
+  ({ id, ...body }: RoutingRuleInputType & { id: number }) =>
+    $fetch(`/api/admin/routing/rule/${id}`, { method: 'post', body }),
   { revert: refresh, noSuccessToast: true }
 );
 
@@ -229,10 +223,8 @@ function toggle(rule: RoutingRule, enabled: boolean) {
 }
 
 const destroy = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/rule/${(data as { id: number }).id}`, {
-      method: 'delete',
-    }),
+  (rule: { id: number }) =>
+    $fetch(`/api/admin/routing/rule/${rule.id}`, { method: 'delete' }),
   { revert: refresh, successMsg: t('admin.routing.rules.removed') }
 );
 
@@ -242,9 +234,9 @@ function remove(rule: RoutingRule) {
 
 const toast = useToast();
 
-const resolve = useSubmit<{ added: number; failed: string[] }>(
-  (data) =>
-    $fetch(`/api/admin/routing/rule/${(data as { id: number }).id}/resolve`, {
+const resolve = useSubmit(
+  (rule: { id: number }) =>
+    $fetch(`/api/admin/routing/rule/${rule.id}/resolve`, {
       method: 'post',
     }),
   {
@@ -286,8 +278,8 @@ function resolveNow(rule: RoutingRule) {
 }
 
 const clear = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/rule/${(data as { id: number }).id}/clear`, {
+  (rule: { id: number }) =>
+    $fetch(`/api/admin/routing/rule/${rule.id}/clear`, {
       method: 'post',
     }),
   { revert: refresh, successMsg: t('admin.routing.rules.cleared') }

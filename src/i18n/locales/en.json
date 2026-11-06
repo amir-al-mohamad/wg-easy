@@ -453,7 +453,7 @@
         "fixed": "New client configs will use this server for DNS",
         "bypassTitle": "Clients with their own resolver",
         "bypassExplanation": "These override the default and will keep bypassing domain rules. Change them individually if that is not what you want.",
-        "interceptOff": "Answering lookups is switched off. Turn it on in the DNS section below.",
+        "proxyOff": "Answering lookups is switched off. Turn it on in the DNS section below.",
         "notListening": "Answering lookups is switched on, but the server could not bind port 53: something else in this network namespace holds it. Check the container log."
       },
       "gateways": {
@@ -557,8 +557,8 @@
       "dnsSettings": {
         "title": "DNS",
         "description": "Domain rules work by watching client lookups, so those lookups have to come here.",
-        "intercept": "Answer client lookups on this server",
-        "interceptHelp": "Turned off, the port is released and domain rules stop learning from client lookups. Rules with \"keep addresses up to date\" still resolve their domains on a schedule; rules written as plain addresses are unaffected either way.",
+        "proxy": "Answer client lookups on this server",
+        "proxyHelp": "Turned off, the port is released and domain rules stop learning from client lookups. Rules with \"keep addresses up to date\" still resolve their domains on a schedule; rules written as plain addresses are unaffected either way.",
         "upstreams": "Ask these resolvers",
         "upstreamsHelp": "Tried in order, first answer wins. Addresses only, since resolving a name here would need a resolver of its own.",
         "saved": "DNS settings updated",

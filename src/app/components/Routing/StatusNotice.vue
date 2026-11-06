@@ -27,8 +27,6 @@
 </template>
 
 <script lang="ts" setup>
-import type { ApplyStatus } from '#shared/utils/routingTypes';
-
 /**
  * Every routing endpoint returns success once its database write lands, so
  * whether the rules actually installed has to be said here.

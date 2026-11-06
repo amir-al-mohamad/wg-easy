@@ -1,13 +1,10 @@
-import { parseCidr } from 'cidr-tools';
-import { stringifyIp } from 'ip-bigint';
-import { isIP } from 'is-ip';
-import isCidr from 'is-cidr';
 import { createDebug } from 'obug';
 
 import { setName } from './marks';
 
 import { exec } from '#server/utils/cmd';
 import type { ID } from '#shared/contracts/validation';
+import { canonical } from '#shared/utils/address';
 
 const ROUTER_DEBUG = createDebug('Router');
 
@@ -25,96 +22,101 @@ const MAX_ELEMENTS = 262144;
  */
 const LIST_BUFFER = 32 * 1024 * 1024;
 
-export type Canonical = {
-  address: string;
-  family: 4 | 6;
-  /** `true` for `0.0.0.0/0` and `::/0` in any spelling. */
-  catchAll: boolean;
-};
-
-/**
- * Write an address the way ipset prints it back: host prefix dropped
- * (`1.2.3.4/32` to `1.2.3.4`), host bits cleared (`10.0.0.1/8` to
- * `10.0.0.0/8`), IPv6 compressed. A value typed into a rule then compares
- * equal to the same value read back from the kernel.
- */
-export function canonical(entry: string): Canonical | null {
-  const value = entry.trim();
-  if (!isIP(value) && isCidr(value) === 0) {
-    return null;
-  }
-
-  const cidr = parseCidr(value);
-  const family = cidr.version;
-  const prefix = Number(cidr.prefix);
-  const network = stringifyIp({ number: cidr.start, version: family });
-  const full = family === 4 ? 32 : 128;
-
-  return {
-    address: prefix === full ? network : `${network}/${prefix}`,
-    family,
-    catchAll: prefix === 0,
-  };
-}
-
 /** Idempotent teardown: nothing to remove is the normal case, not a failure. */
 async function quiet(command: string) {
   await exec(`${command} 2>/dev/null || true`, { log: false });
 }
 
 /**
- * Create both of a rule's sets if missing. `counters` is what makes expiry
- * traffic-aware: the traffic pass reads per-entry packet counts.
+ * Feed lines to `ipset restore` in one process. It stops at the first line it
+ * refuses (a full set, a timeout out of range), so on failure the lines are
+ * applied one by one, and a refused entry costs only itself.
  */
-export async function ensureSets(ruleId: ID) {
-  for (const [family, inet] of [
-    [4, 'inet'],
-    [6, 'inet6'],
-  ] as const) {
-    await quiet(
-      `ipset create ${setName(ruleId, family)} hash:net family ${inet} counters timeout 0 maxelem ${MAX_ELEMENTS}`
-    );
+async function restore(lines: readonly string[]) {
+  if (lines.length === 0) {
+    return;
+  }
+  try {
+    await exec('ipset -exist restore', {
+      log: false,
+      input: `${lines.join('\n')}\n`,
+    });
+  } catch {
+    for (const line of lines) {
+      try {
+        await exec(`ipset -exist ${line}`, { log: false });
+      } catch (error) {
+        // Not quieted: a refused add leaves the rule matching less than it
+        // claims to.
+        ROUTER_DEBUG(`ipset refused "${line}":`, error);
+      }
+    }
   }
 }
 
 /**
- * @param timeout seconds until the address expires; 0 never expires, which is
- * what hand-entered addresses get
+ * Create the sets of these rules if missing. `counters` is what makes expiry
+ * traffic-aware: the traffic pass reads per-entry packet counts.
  */
-export async function addAddress(ruleId: ID, address: string, timeout = 0) {
-  const entry = canonical(address);
-  if (!entry) {
-    ROUTER_DEBUG(`Rule ${ruleId}: ignoring unparsable address ${address}`);
-    return;
-  }
-  // Catch-alls are matched without a set: `hash:net` rejects a zero-length
-  // prefix on many kernels.
-  if (entry.catchAll) {
-    return;
-  }
-
-  const expiry = timeout > 0 ? ` timeout ${timeout}` : '';
-  try {
-    // Not quieted: a refused add (set full, bad timeout) is a real failure that
-    // leaves the rule matching less than it claims to.
-    await exec(
-      `ipset add ${setName(ruleId, entry.family)} ${entry.address}${expiry} -exist`,
-      { log: false }
-    );
-  } catch (error) {
-    ROUTER_DEBUG(`Rule ${ruleId}: could not add ${entry.address}:`, error);
-  }
+export async function ensureSets(ruleIds: readonly ID[]) {
+  await restore(
+    ruleIds.flatMap((ruleId) =>
+      (
+        [
+          [4, 'inet'],
+          [6, 'inet6'],
+        ] as const
+      ).map(
+        ([family, inet]) =>
+          `create ${setName(ruleId, family)} hash:net family ${inet} counters timeout 0 maxelem ${MAX_ELEMENTS}`
+      )
+    )
+  );
 }
 
-export async function removeAddress(ruleId: ID, address: string) {
-  const entry = canonical(address);
-  if (!entry || entry.catchAll) {
-    return;
-  }
+/**
+ * A change to one rule's sets. A `timeout` in seconds makes the address
+ * expire; 0 or none keeps it, which is what hand-entered addresses get.
+ */
+export type SetChange =
+  | { op: 'add'; ruleId: ID; address: string; timeout?: number }
+  | { op: 'del'; ruleId: ID; address: string };
 
-  await quiet(
-    `ipset del ${setName(ruleId, entry.family)} ${entry.address} -exist`
-  );
+/**
+ * The `ipset restore` lines for a batch of changes, each in the set of its
+ * family. Catch-alls are left out: they are matched without a set, because
+ * `hash:net` rejects a zero-length prefix on many kernels.
+ */
+export function setLines(changes: readonly SetChange[]) {
+  const lines: string[] = [];
+  for (const change of changes) {
+    const entry = canonical(change.address);
+    if (!entry) {
+      ROUTER_DEBUG(
+        `Rule ${change.ruleId}: ignoring unparsable address ${change.address}`
+      );
+      continue;
+    }
+    if (entry.catchAll) {
+      continue;
+    }
+
+    const set = setName(change.ruleId, entry.family);
+    if (change.op === 'del') {
+      lines.push(`del ${set} ${entry.address}`);
+    } else {
+      const timeout = change.timeout ?? 0;
+      lines.push(
+        `add ${set} ${entry.address}${timeout > 0 ? ` timeout ${timeout}` : ''}`
+      );
+    }
+  }
+  return lines;
+}
+
+/** Apply a batch of changes, across any number of rules, in one process. */
+export async function changeSets(changes: readonly SetChange[]) {
+  await restore(setLines(changes));
 }
 
 /** Drop every address a rule has learned, keeping the sets themselves. */
@@ -188,11 +190,36 @@ export async function listAddresses(ruleId: ID): Promise<SetEntry[]> {
   return [...v4, ...v6];
 }
 
-export async function countAddresses(ruleId: ID) {
-  return (await listAddresses(ruleId)).length;
+const OWNED_SET = /^wgr[46]_(\d+)$/;
+
+/**
+ * Entries per rule, both families together, from the headers `ipset list -t`
+ * prints: the count without the members.
+ */
+export function parseCounts(output: string) {
+  const counts = new Map<ID, number>();
+  let rule: ID | null = null;
+
+  for (const line of output.split('\n').map((entry) => entry.trim())) {
+    if (line.startsWith('Name: ')) {
+      const match = OWNED_SET.exec(line.slice('Name: '.length));
+      rule = match ? Number(match[1]) : null;
+    } else if (rule !== null && line.startsWith('Number of entries: ')) {
+      const count = Number(line.slice('Number of entries: '.length));
+      counts.set(rule, (counts.get(rule) ?? 0) + count);
+    }
+  }
+  return counts;
 }
 
-const OWNED_SET = /^wgr[46]_(\d+)$/;
+/** How many destinations each rule currently matches, in one read. */
+export async function countAddresses() {
+  try {
+    return parseCounts(await exec('ipset list -t', { log: false }));
+  } catch {
+    return new Map<ID, number>();
+  }
+}
 
 /**
  * Destroy sets left behind by rules that no longer exist, e.g. deleted while

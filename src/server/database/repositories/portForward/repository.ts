@@ -1,14 +1,20 @@
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 
 import { portForward } from './schema';
-import { conflictingProtocols } from './types';
-import type {
-  PortForwardCreateType,
-  PortForwardUpdateType,
-  Protocol,
-} from './types';
 
+import type { PortForwardInputType } from '#shared/contracts/portForward';
+import type { ForwardProtocol } from '#shared/utils/routing';
 import type { DBExecutor } from '#db/types';
+
+/**
+ * Protocols that would collide with `protocol` on the same external port.
+ *
+ * `both` occupies TCP and UDP at once, so it clashes with either, which the
+ * unique index on (port, protocol) cannot express on its own.
+ */
+function conflictingProtocols(protocol: ForwardProtocol): ForwardProtocol[] {
+  return protocol === 'both' ? ['tcp', 'udp', 'both'] : [protocol, 'both'];
+}
 
 const withClient = {
   client: {
@@ -32,7 +38,7 @@ export type ForwardConflict = { id: number; name: string; protocol: string };
 async function findConflict(
   tx: DBExecutor,
   externalPort: number,
-  protocol: Protocol,
+  protocol: ForwardProtocol,
   excludeId?: number
 ): Promise<ForwardConflict | undefined> {
   const [conflict] = await tx
@@ -78,7 +84,7 @@ export class PortForwardRepository {
    *
    * @returns the created forward, or the conflict that prevented it
    */
-  async create(data: PortForwardCreateType) {
+  async create(data: PortForwardInputType) {
     return this.db.transaction(async (tx) => {
       const conflict = await findConflict(tx, data.externalPort, data.protocol);
       if (conflict) {
@@ -90,7 +96,7 @@ export class PortForwardRepository {
     });
   }
 
-  async update(id: number, data: PortForwardUpdateType) {
+  async update(id: number, data: PortForwardInputType) {
     return this.db.transaction(async (tx) => {
       const conflict = await findConflict(
         tx,

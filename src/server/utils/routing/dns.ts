@@ -6,7 +6,7 @@ import { isIPv6 } from 'is-ip';
 import { createDebug } from 'obug';
 
 import { readAnswerRecords, readQuestionName, toServFail } from './dnsMessage';
-import { addAddress } from './ipset';
+import { changeSets } from './ipset';
 import { setTtl } from './resolve';
 
 import { matchesAny } from '#shared/utils/pattern';
@@ -20,6 +20,14 @@ const PORT = 53;
  * after five seconds, so a later answer, even a SERVFAIL, reaches nobody.
  */
 const UPSTREAM_BUDGET_MS = 4000;
+
+/**
+ * How long a reply may wait for its addresses to land in a rule's set. The
+ * client connects as soon as it has the answer, and a connection whose first
+ * packet beats the set goes the wrong way for its whole life, so the reply
+ * waits; but never long, since a stuck `ipset` must not stall name lookups.
+ */
+const LEARN_BUDGET_MS = 500;
 
 /**
  * Bounds on lookups waiting on an upstream, overall and per client, so a
@@ -68,7 +76,12 @@ type DnsConfig = {
   listen: readonly string[];
   /** Subnets lookups may come from: the client-facing interface's. */
   clientCidrs: readonly string[];
+  /** Port the upstreams answer on: 53, unless a test points elsewhere. */
+  upstreamPort?: number;
 };
+
+/** How a lookup reached the proxy, and so how it is passed upstream. */
+type Transport = 'udp' | 'tcp';
 
 let config: DnsConfig = {
   rules: [],
@@ -106,7 +119,7 @@ function isClient(address: string) {
  * from anyone else, and the transaction id is checked so a stale or forged
  * reply is ignored rather than relayed and learned.
  */
-function askUpstream(
+function askUpstreamUdp(
   query: Buffer,
   upstream: string,
   timeoutMs: number
@@ -134,7 +147,7 @@ function askUpstream(
       }
     });
     socket.once('error', () => finish(null));
-    socket.connect(PORT, upstream, () => {
+    socket.connect(config.upstreamPort ?? PORT, upstream, () => {
       socket.send(query, (error) => {
         if (error) {
           finish(null);
@@ -144,8 +157,69 @@ function askUpstream(
   });
 }
 
+/** A DNS message on a stream: a 16-bit length, then the message. */
+function frame(message: Buffer) {
+  const framed = Buffer.alloc(2 + message.length);
+  framed.writeUInt16BE(message.length, 0);
+  message.copy(framed, 2);
+  return framed;
+}
+
+/**
+ * Ask one upstream over TCP, for lookups that came in over TCP: those are
+ * retries of answers too large for a datagram, and asking upstream over UDP
+ * would only bring back the same truncated reply.
+ */
+function askUpstreamTcp(
+  query: Buffer,
+  upstream: string,
+  timeoutMs: number
+): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    const id = query.readUInt16BE(0);
+    const socket = net.connect({
+      host: upstream,
+      port: config.upstreamPort ?? PORT,
+    });
+    let buffered = Buffer.alloc(0);
+
+    let settled = false;
+    const finish = (reply: Buffer | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(reply);
+    };
+
+    const timer = setTimeout(() => finish(null), timeoutMs);
+
+    socket.on('connect', () => socket.write(frame(query)));
+    socket.on('data', (chunk: Buffer) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      if (buffered.length < 2) {
+        return;
+      }
+      const length = buffered.readUInt16BE(0);
+      if (buffered.length < 2 + length) {
+        return;
+      }
+      const reply = Buffer.from(buffered.subarray(2, 2 + length));
+      finish(reply.length >= 12 && reply.readUInt16BE(0) === id ? reply : null);
+    });
+    socket.on('error', () => finish(null));
+    socket.on('close', () => finish(null));
+  });
+}
+
 /** Try each upstream in turn within one overall time budget. */
-async function forward(query: Buffer): Promise<Buffer | null> {
+async function forward(
+  query: Buffer,
+  transport: Transport
+): Promise<Buffer | null> {
+  const ask = transport === 'tcp' ? askUpstreamTcp : askUpstreamUdp;
   const deadline = Date.now() + UPSTREAM_BUDGET_MS;
   const perUpstream = Math.floor(UPSTREAM_BUDGET_MS / config.upstreams.length);
 
@@ -155,11 +229,7 @@ async function forward(query: Buffer): Promise<Buffer | null> {
       break;
     }
 
-    const reply = await askUpstream(
-      query,
-      upstream,
-      Math.min(perUpstream, remaining)
-    );
+    const reply = await ask(query, upstream, Math.min(perUpstream, remaining));
     if (reply) {
       return reply;
     }
@@ -188,15 +258,32 @@ async function learn(client: string, question: string, reply: Buffer) {
   const records = readAnswerRecords(reply).filter(
     (record) => !containsCidr(NEVER_LEARN, record.address)
   );
-  for (const record of records) {
-    await addAddress(rule.id, record.address, setTtl(record.ttl));
-  }
+  await changeSets(
+    records.map((record) => ({
+      op: 'add',
+      ruleId: rule.id,
+      address: record.address,
+      timeout: setTtl(record.ttl),
+    }))
+  );
 
   if (records.length > 0) {
     ROUTER_DEBUG(
       `${question} -> rule ${rule.id} (+${records.length} address(es))`
     );
   }
+}
+
+/** Wait for `task`, but no longer than `ms`; it carries on regardless. */
+async function within(task: Promise<void>, ms: number) {
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    task,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 /**
@@ -206,7 +293,8 @@ async function learn(client: string, question: string, reply: Buffer) {
  */
 async function resolveQuery(
   client: string,
-  query: Buffer
+  query: Buffer,
+  transport: Transport
 ): Promise<Buffer | null> {
   if (query.length < 12) {
     return null;
@@ -223,7 +311,7 @@ async function resolveQuery(
   inFlight++;
   inFlightByClient.set(client, perClient + 1);
   try {
-    const reply = await forward(query);
+    const reply = await forward(query, transport);
     if (!reply) {
       // Answer the failure rather than let the client wait out its own
       // timeout, which turns a brief upstream hiccup into a visible stall.
@@ -232,10 +320,13 @@ async function resolveQuery(
 
     const question = readQuestionName(query);
     if (question) {
-      // Learning happens after the reply is on its way, so routing state for
-      // the next connection never delays this one.
-      void learn(client, question, reply).catch((error) =>
-        ROUTER_DEBUG(`Failed to learn from ${question}:`, error)
+      // Learned before the reply goes out: the client connects the moment it
+      // has the answer, and its first packet decides the connection's route.
+      await within(
+        learn(client, question, reply).catch((error) =>
+          ROUTER_DEBUG(`Failed to learn from ${question}:`, error)
+        ),
+        LEARN_BUDGET_MS
       );
     }
     return reply;
@@ -260,7 +351,7 @@ function listenUdp(address: string) {
   });
 
   socket.on('message', (query, from) => {
-    void resolveQuery(from.address, query)
+    void resolveQuery(from.address, query, 'udp')
       .then((reply) => {
         if (reply) {
           socket.send(reply, from.port, from.address);
@@ -309,15 +400,12 @@ function listenTcp(address: string) {
         const query = buffered.subarray(2, 2 + length);
         buffered = buffered.subarray(2 + length);
 
-        void resolveQuery(client, query)
+        void resolveQuery(client, query, 'tcp')
           .then((reply) => {
             if (!reply || connection.destroyed) {
               return;
             }
-            const framed = Buffer.alloc(2 + reply.length);
-            framed.writeUInt16BE(reply.length, 0);
-            reply.copy(framed, 2);
-            connection.write(framed);
+            connection.write(frame(reply));
           })
           .catch((error) => ROUTER_DEBUG('Lookup failed:', error));
       }
@@ -375,3 +463,5 @@ export function stopDnsProxy() {
 export function isDnsProxyListening() {
   return sockets.length > 0;
 }
+
+export const dnsTestExports = { resolveQuery };

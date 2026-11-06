@@ -91,13 +91,11 @@
 </template>
 
 <script lang="ts" setup>
-import { PROTOCOL_LABELS } from '#shared/utils/routingTypes';
-import type {
-  ForwardPorts,
-  PortForward,
-  PortForwardProtocol,
-  RoutingClient,
-} from '#shared/utils/routingTypes';
+import {
+  forwardProtocolLabels,
+  forwardProtocols,
+  type ForwardProtocol,
+} from '#shared/utils/routing';
 
 const props = defineProps<{
   /** Absent when creating. */
@@ -119,13 +117,15 @@ const bounds = computed(() => ({
   max: Math.max(1, ...props.ports.specs.map((spec) => spec.end)),
 }));
 
+const newForwardProtocol: ForwardProtocol = 'tcp';
+
 const form = reactive({
   name: props.forward?.name ?? '',
   description: props.forward?.description ?? '',
   clientId: props.forward?.clientId ?? props.clients[0]?.id ?? 0,
   externalPort: props.forward?.externalPort ?? props.ports.specs[0]?.start ?? 0,
   internalPort: props.forward?.internalPort ?? 80,
-  protocol: (props.forward?.protocol ?? 'tcp') as PortForwardProtocol,
+  protocol: props.forward?.protocol ?? newForwardProtocol,
 });
 
 const clientOptions = computed(() =>
@@ -135,9 +135,10 @@ const clientOptions = computed(() =>
   }))
 );
 
-const protocolOptions = (
-  Object.entries(PROTOCOL_LABELS) as [PortForwardProtocol, string][]
-).map(([value, label]) => ({ value, label }));
+const protocolOptions = forwardProtocols.map((value) => ({
+  value,
+  label: forwardProtocolLabels[value],
+}));
 
 const save = useSubmit(
   (data) =>

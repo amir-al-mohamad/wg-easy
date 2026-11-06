@@ -1,7 +1,24 @@
 import { createError } from 'nuxt/server';
 
+import { isForwardPortPublished } from './env';
+
 import { getDatabase } from '#db';
 import { WG_ENV } from '#server/utils/config';
+import { PortForwardSchema } from '#shared/contracts/portForward';
+import { t } from '#shared/contracts/validation';
+
+/**
+ * The forward contract, plus the one check only the server can make: whether
+ * the container publishes the external port. A forward outside the published
+ * ports would be accepted and then never receive a packet.
+ */
+export const PublishedForwardSchema = PortForwardSchema.refine(
+  (forward) => isForwardPortPublished(forward.externalPort),
+  {
+    message: t('validation.portForward.externalPortRange'),
+    path: ['externalPort'],
+  }
+);
 
 /**
  * Refuse a forward that the schema alone cannot rule out.

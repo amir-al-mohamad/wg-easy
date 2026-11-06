@@ -12,11 +12,11 @@ import {
 } from './marks';
 
 /**
- * Turns routing state into the list of commands that realizes it. Kept free
+ * Turns routing state into the steps that realize it. Kept free
  * of I/O so the commands and their order can be asserted in tests.
  */
 
-/** Chains this feature owns. Torn down and rebuilt whole on every change. */
+/** Chains this feature owns. Replaced whole on every change. */
 export const CHAIN_MANGLE = 'WG_ROUTER';
 export const CHAIN_MSS = 'WG_ROUTER_MSS';
 export const CHAIN_NAT = 'WG_ROUTER_NAT';
@@ -107,11 +107,39 @@ export type Plan = {
    * keep translating them whatever the rules now say.
    */
   staleForwards: PlanForward[];
-  /** Mark for traffic no rule matched, or null to leave it to the main table. */
+  /** Mark for traffic no rule matched, or null to send it direct. */
   defaultFwmark: string | null;
   /** Our rules found installed. Those still wanted are kept, the rest removed last. */
   installedRules: { v4: InstalledRule[]; v6: InstalledRule[] };
 };
+
+/**
+ * Chains replaced whole in a single `iptables-restore --noflush` commit:
+ * declared chains are created if missing and flushed if present, and the
+ * kernel switches from the old rules to the new ones at once. A rule the
+ * kernel refuses aborts the commit and leaves the previous rules in force.
+ */
+export type Restore = {
+  iptables: 'iptables' | 'ip6tables';
+  table: 'mangle' | 'nat';
+  chains: { name: string; rules: string[] }[];
+};
+
+/** One step of an apply: a shell command, or an atomic chain replacement. */
+export type Step = { command: string } | { restore: Restore };
+
+/** What `iptables-restore` reads for a {@link Restore}. */
+export function renderRestore(restore: Restore) {
+  return [
+    `*${restore.table}`,
+    ...restore.chains.map((chain) => `:${chain.name} - [0:0]`),
+    ...restore.chains.flatMap((chain) =>
+      chain.rules.map((rule) => `-A ${chain.name} ${rule}`)
+    ),
+    'COMMIT',
+    '',
+  ].join('\n');
+}
 
 type Family = {
   iptables: 'iptables' | 'ip6tables';
@@ -141,30 +169,24 @@ function removeAll(command: string) {
 }
 
 /**
- * Tear a chain down and put it back, attached to `parent` at `match`. The
- * detach uses the exact jump specification of the attach: `iptables -D` only
- * removes an exact match, and a drifted detach would leave a new jump appended
- * on every apply.
+ * Attach a chain to its parent unless it already is. The chain's contents are
+ * replaced by a restore, so the jump stays put across applies and traffic is
+ * never without it.
  */
-function rebuildChain(
-  out: string[],
+function attach(
   family: Family,
   table: string,
   chain: string,
   parent: string,
   match = ''
-) {
-  const ipt = `${family.iptables} -t ${table}`;
+): Step {
   const jump = `${parent}${match} -j ${chain}`;
-  out.push(removeAll(`${ipt} -D ${jump}`));
-  out.push(quiet(`${ipt} -F ${chain}`));
-  out.push(quiet(`${ipt} -X ${chain}`));
-  out.push(`${ipt} -N ${chain}`);
-  out.push(`${ipt} -A ${jump}`);
+  const ipt = `${family.iptables} -t ${table}`;
+  return { command: `${ipt} -C ${jump} 2>/dev/null || ${ipt} -A ${jump}` };
 }
 
 function removeChain(
-  out: string[],
+  out: Step[],
   family: Family,
   table: string,
   chain: string,
@@ -172,9 +194,9 @@ function removeChain(
   match = ''
 ) {
   const ipt = `${family.iptables} -t ${table}`;
-  out.push(removeAll(`${ipt} -D ${parent}${match} -j ${chain}`));
-  out.push(quiet(`${ipt} -F ${chain}`));
-  out.push(quiet(`${ipt} -X ${chain}`));
+  out.push({ command: removeAll(`${ipt} -D ${parent}${match} -j ${chain}`) });
+  out.push({ command: quiet(`${ipt} -F ${chain}`) });
+  out.push({ command: quiet(`${ipt} -X ${chain}`) });
 }
 
 /** The rule steering one mark into one table, as `ip rule list` prints it. */
@@ -218,7 +240,7 @@ function isGatewayTable(table: string) {
  * only after its rule is gone, or traffic would briefly fall through to main.
  */
 function removeStaleRules(
-  out: string[],
+  out: Step[],
   plan: Plan,
   families: Family[],
   keep: readonly InstalledRule[]
@@ -235,13 +257,15 @@ function removeStaleRules(
         continue;
       }
 
-      out.push(
-        removeAll(
+      out.push({
+        command: removeAll(
           `${family.ip} rule del priority ${rule.priority} fwmark ${rule.fwmark} table ${rule.table}`
-        )
-      );
+        ),
+      });
       if (isGatewayTable(rule.table) && !keptTables.has(rule.table)) {
-        out.push(quiet(`${family.ip} route flush table ${rule.table}`));
+        out.push({
+          command: quiet(`${family.ip} route flush table ${rule.table}`),
+        });
       }
     }
   }
@@ -261,8 +285,8 @@ export function isEmpty(plan: Plan) {
  * Remove everything this feature installs, so an install that never uses it
  * carries none of its chains, rules or tables.
  */
-function buildTeardown(plan: Plan): string[] {
-  const out: string[] = [];
+function buildTeardown(plan: Plan): Step[] {
+  const out: Step[] = [];
   const families: Family[] = plan.enableIpv6 ? [V4, V6] : [V4];
 
   // Chains first, so nothing is still being marked when the rules those marks
@@ -286,7 +310,9 @@ function buildTeardown(plan: Plan): string[] {
   removeStaleRules(out, plan, families, []);
 
   for (const family of families) {
-    out.push(quiet(`${family.ip} route flush table ${BLOCK_TABLE}`));
+    out.push({
+      command: quiet(`${family.ip} route flush table ${BLOCK_TABLE}`),
+    });
     endForwardConnections(out, family, plan.staleForwards);
   }
 
@@ -294,25 +320,107 @@ function buildTeardown(plan: Plan): string[] {
 }
 
 /**
- * Build the command list that makes the kernel match `plan`.
+ * The marks a connection may keep from an earlier packet: those this plan
+ * still routes. A connection holding any other mark, one whose gateway was
+ * switched off or removed, is classified again by the rules as they are now.
+ */
+function liveMarks(plan: Plan) {
+  return [
+    ...new Set([
+      ...plan.gateways.map((gateway) => gateway.fwmark),
+      MARK_DIRECT,
+      MARK_BLOCK,
+    ]),
+  ];
+}
+
+/**
+ * Classify client traffic. The route is decided on a connection's first
+ * packet and remembered in its connection mark, so every later packet takes
+ * the same one. Deciding per packet would move a connection the moment its
+ * destination entered or left a rule's set, out of a NAT mapping that only
+ * holds on the original path, and the connection would die.
+ */
+function classifyRules(plan: Plan, family: Family) {
+  const rules: string[] = [];
+  const unmarked = `-m mark --mark 0x0/${MARK_MASK}`;
+
+  // Replies to an inbound forward have to go back the way the request came,
+  // not out a gateway.
+  rules.push(
+    `-m connmark --mark ${FORWARD_CONNMARK}/${FORWARD_CONNMARK} -j RETURN`
+  );
+
+  // Client-to-client traffic never leaves the interface it arrived on;
+  // without this a default action of `block` would sever clients from each
+  // other.
+  const subnets = family.v6 ? plan.localSubnets.v6 : plan.localSubnets.v4;
+  for (const subnet of subnets) {
+    rules.push(`-d ${subnet} -j RETURN`);
+  }
+
+  rules.push(
+    `-j CONNMARK --restore-mark --nfmask ${MARK_MASK} --ctmask ${MARK_MASK}`
+  );
+  for (const mark of liveMarks(plan)) {
+    rules.push(`-m mark --mark ${mark}/${MARK_MASK} -j RETURN`);
+  }
+  rules.push(`-j MARK --set-xmark 0x0/${MARK_MASK}`);
+
+  // In match order, each guarded by the unmarked test so the first match
+  // wins; without the guard a later `-j MARK` would overwrite it.
+  for (const rule of plan.rules) {
+    const matchAll = family.v6 ? rule.matchAllV6 : rule.matchAllV4;
+    const destination = matchAll
+      ? ''
+      : ` -m set --match-set ${setName(rule.id, family.v6 ? 6 : 4)} dst`;
+
+    const sources = rule.clients.length
+      ? rule.clients
+          .map((client) => (family.v6 ? client.ipv6 : client.ipv4))
+          .filter((address): address is string => Boolean(address))
+          .map((address) => ` -s ${address}`)
+      : [''];
+
+    for (const source of sources) {
+      rules.push(
+        `${unmarked}${source}${destination} -j MARK --set-xmark ${rule.fwmark}/${MARK_MASK}`
+      );
+    }
+  }
+
+  // Unmatched traffic is marked too, direct included, so the decision is
+  // remembered: a connection that started direct stays direct when its
+  // destination is learned into a rule halfway through.
+  rules.push(
+    `${unmarked} -j MARK --set-xmark ${plan.defaultFwmark ?? MARK_DIRECT}/${MARK_MASK}`
+  );
+  rules.push(
+    `-j CONNMARK --save-mark --nfmask ${MARK_MASK} --ctmask ${MARK_MASK}`
+  );
+
+  return rules;
+}
+
+/**
+ * Build the steps that make the kernel match `plan`.
  *
  * 1. Routing tables and `ip rule`s first, in place: routes are replaced
  *    rather than flushed, and rules already installed as wanted are left
  *    alone, so traffic keeps flowing throughout. Rules no longer wanted go
  *    last, once the chains stop producing their marks.
- * 2. Chains are recreated rather than edited, the same brief window
- *    `firewall.ts` accepts for its own rebuilds.
- * 3. In the mangle chain, traffic that must never be redirected returns
- *    first: replies to forwarded connections, then client-to-client traffic.
- * 4. Rules are emitted in match order, each guarded by `--mark 0x0`, so the
- *    first match wins; without the guard a later `-j MARK` overwrites it.
+ * 2. The NAT chains, then the mangle chains, each table in one atomic
+ *    restore: a gateway's masquerade is in place before traffic is marked
+ *    into it, and no packet ever sees a half-built chain.
+ * 3. Connections through forwards that are gone are ended, then stale rules
+ *    removed.
  */
-export function buildPlan(plan: Plan): string[] {
+export function buildPlan(plan: Plan): Step[] {
   if (isEmpty(plan)) {
     return buildTeardown(plan);
   }
 
-  const out: string[] = [];
+  const out: Step[] = [];
   const families: Family[] = plan.enableIpv6 ? [V4, V6] : [V4];
 
   /** Can this link actually carry traffic of this family right now? */
@@ -342,22 +450,22 @@ export function buildPlan(plan: Plan): string[] {
       // open internet. A gateway set to "send direct" gets a throw instead,
       // which continues the lookup in main. Routes are replaced in place so
       // the table is never empty, not even briefly.
-      out.push(
-        `${family.ip} route replace ${gateway.failClosed ? 'blackhole' : 'throw'} default table ${table} metric ${TERMINAL_METRIC}`
-      );
+      out.push({
+        command: `${family.ip} route replace ${gateway.failClosed ? 'blackhole' : 'throw'} default table ${table} metric ${TERMINAL_METRIC}`,
+      });
 
       const chain: PlanHop[] = [gateway, ...gateway.fallbacks];
       const wantedMetrics = new Set([TERMINAL_METRIC]);
       chain.forEach((link, index) => {
         const metric = HOP_METRIC + index;
         wantedMetrics.add(metric);
-        out.push(
-          usable(link, family)
+        out.push({
+          command: usable(link, family)
             ? `${family.ip} route replace default dev ${link.interfaceName} table ${table} metric ${metric}`
             : quiet(
                 `${family.ip} route del default table ${table} metric ${metric}`
-              )
-        );
+              ),
+        });
       });
 
       // Slots a shorter chain no longer uses, deleted by metric alone.
@@ -365,130 +473,48 @@ export function buildPlan(plan: Plan): string[] {
         if (wantedMetrics.has(metric)) {
           continue;
         }
-        out.push(
-          quiet(
+        out.push({
+          command: quiet(
             `${family.ip} route del default table ${table} metric ${metric}`
-          )
-        );
+          ),
+        });
       }
     }
 
     // Blocking is a blackhole route rather than a FORWARD drop: the client
     // firewall inserts its own jump at the head of FORWARD on every rebuild
     // and ACCEPTs inside it, so an appended DROP would never run.
-    out.push(
-      `${family.ip} route replace blackhole default table ${BLOCK_TABLE}`
-    );
+    out.push({
+      command: `${family.ip} route replace blackhole default table ${BLOCK_TABLE}`,
+    });
 
     for (const rule of keep) {
       if (!installed.has(ruleKey(rule))) {
-        out.push(ruleAdd(family, rule));
+        out.push({ command: ruleAdd(family, rule) });
       }
     }
   }
 
-  // 2. Mangle chain: classify client traffic
+  // 2a. NAT: masquerade out of every gateway, and inbound port forwards.
   for (const family of families) {
-    const ipt = `${family.iptables} -t mangle`;
-    rebuildChain(
-      out,
-      family,
-      'mangle',
-      CHAIN_MANGLE,
-      'PREROUTING',
-      ` -i ${plan.wgInterface}`
-    );
+    // The PostUp hook only masquerades traffic leaving by the host uplink;
+    // packets redirected into a gateway would otherwise carry a client's
+    // tunnel address and get no reply.
+    const masquerade = plan.gateways
+      .filter((gateway) => usable(gateway, family))
+      .map((gateway) => `-o ${gateway.interfaceName} -j MASQUERADE`);
 
-    // Replies to an inbound forward carry its connection mark and have to go
-    // back the way the request came, not out a gateway.
-    out.push(
-      `${ipt} -A ${CHAIN_MANGLE} -m connmark --mark ${FORWARD_CONNMARK}/${FORWARD_CONNMARK} -j RETURN`
-    );
-
-    // Client-to-client traffic never leaves the interface it arrived on;
-    // without this a default action of `block` would sever clients from
-    // each other.
-    const subnets = family.v6 ? plan.localSubnets.v6 : plan.localSubnets.v4;
-    for (const subnet of subnets) {
-      out.push(`${ipt} -A ${CHAIN_MANGLE} -d ${subnet} -j RETURN`);
-    }
-
-    for (const rule of plan.rules) {
-      const matchAll = family.v6 ? rule.matchAllV6 : rule.matchAllV4;
-      const destination = matchAll
-        ? ''
-        : ` -m set --match-set ${setName(rule.id, family.v6 ? 6 : 4)} dst`;
-
-      const sources = rule.clients.length
-        ? rule.clients
-            .map((client) => (family.v6 ? client.ipv6 : client.ipv4))
-            .filter((address): address is string => Boolean(address))
-            .map((address) => ` -s ${address}`)
-        : [''];
-
-      for (const source of sources) {
-        out.push(
-          `${ipt} -A ${CHAIN_MANGLE} -m mark --mark 0x0/${MARK_MASK}${source}${destination} -j MARK --set-xmark ${rule.fwmark}/${MARK_MASK}`
-        );
-      }
-    }
-
-    if (plan.defaultFwmark) {
-      out.push(
-        `${ipt} -A ${CHAIN_MANGLE} -m mark --mark 0x0/${MARK_MASK} -j MARK --set-xmark ${plan.defaultFwmark}/${MARK_MASK}`
-      );
-    }
-  }
-
-  // 3. Clamp MSS on every gateway. A tunnel inside a tunnel leaves little
-  // room for payload; without clamping, full-size TCP segments are dropped
-  // and transfers stall.
-  for (const family of families) {
-    const ipt = `${family.iptables} -t mangle`;
-    rebuildChain(out, family, 'mangle', CHAIN_MSS, 'FORWARD');
-
-    for (const gateway of plan.gateways) {
-      if (!usable(gateway, family)) {
-        continue;
-      }
-      out.push(
-        `${ipt} -A ${CHAIN_MSS} -o ${gateway.interfaceName} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu`
-      );
-    }
-  }
-
-  // 4. Masquerade out of every gateway. The PostUp hook only masquerades
-  // traffic leaving by the host uplink; packets redirected into a gateway
-  // would otherwise carry a client's tunnel address and get no reply.
-  for (const family of families) {
-    const ipt = `${family.iptables} -t nat`;
-    rebuildChain(out, family, 'nat', CHAIN_NAT, 'POSTROUTING');
-
-    for (const gateway of plan.gateways) {
-      if (!usable(gateway, family)) {
-        continue;
-      }
-      out.push(
-        `${ipt} -A ${CHAIN_NAT} -o ${gateway.interfaceName} -j MASQUERADE`
-      );
-    }
-  }
-
-  // 5. Inbound port forwards
-  for (const family of families) {
-    const ipt = `${family.iptables} -t nat`;
-    rebuildChain(out, family, 'nat', CHAIN_FORWARD, 'PREROUTING');
-
-    // Only traffic that arrived from outside is eligible. Without these guards
-    // a client connecting to any host on a forwarded port would be DNAT'd to
-    // the forward's target, and packets arriving through a gateway would reach
-    // client ports the published list was meant to gate.
-    out.push(`${ipt} -A ${CHAIN_FORWARD} -i ${plan.wgInterface} -j RETURN`);
-    for (const gateway of plan.gateways) {
-      out.push(
-        `${ipt} -A ${CHAIN_FORWARD} -i ${gateway.interfaceName} -j RETURN`
-      );
-    }
+    // Only traffic that arrived from outside is eligible for a forward.
+    // Without these guards a client connecting to any host on a forwarded
+    // port would be DNAT'd to the forward's target, and packets arriving
+    // through a gateway would reach client ports the published list was
+    // meant to gate.
+    const forwards = [
+      `-i ${plan.wgInterface} -j RETURN`,
+      ...plan.gateways.map(
+        (gateway) => `-i ${gateway.interfaceName} -j RETURN`
+      ),
+    ];
 
     // Two rules per protocol. The CONNMARK comes first and is what lets the
     // mangle chain recognise the replies; without it a default action of
@@ -504,24 +530,68 @@ export function buildPlan(plan: Plan): string[] {
         : `${address}:${forward.internalPort}`;
 
       for (const protocol of forward.protocols) {
-        const match = ` -p ${protocol} --dport ${forward.externalPort}`;
-        out.push(
-          `${ipt} -A ${CHAIN_FORWARD}${match} -j CONNMARK --set-xmark ${FORWARD_CONNMARK}/${FORWARD_CONNMARK}`
+        const match = `-p ${protocol} --dport ${forward.externalPort}`;
+        forwards.push(
+          `${match} -j CONNMARK --set-xmark ${FORWARD_CONNMARK}/${FORWARD_CONNMARK}`
         );
-        out.push(
-          `${ipt} -A ${CHAIN_FORWARD}${match} -j DNAT --to-destination ${destination}`
-        );
+        forwards.push(`${match} -j DNAT --to-destination ${destination}`);
       }
     }
+
+    out.push({
+      restore: {
+        iptables: family.iptables,
+        table: 'nat',
+        chains: [
+          { name: CHAIN_NAT, rules: masquerade },
+          { name: CHAIN_FORWARD, rules: forwards },
+        ],
+      },
+    });
+    out.push(attach(family, 'nat', CHAIN_NAT, 'POSTROUTING'));
+    out.push(attach(family, 'nat', CHAIN_FORWARD, 'PREROUTING'));
   }
 
-  // 6. Connections through forwards this apply no longer has. After the chain
-  // rebuild, so the old rule cannot re-create them on the next packet.
+  // 2b. Mangle: classify client traffic, and clamp MSS on every gateway. A
+  // tunnel inside a tunnel leaves little room for payload; without clamping,
+  // full-size TCP segments are dropped and transfers stall.
+  for (const family of families) {
+    const clamp = plan.gateways
+      .filter((gateway) => usable(gateway, family))
+      .map(
+        (gateway) =>
+          `-o ${gateway.interfaceName} -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu`
+      );
+
+    out.push({
+      restore: {
+        iptables: family.iptables,
+        table: 'mangle',
+        chains: [
+          { name: CHAIN_MANGLE, rules: classifyRules(plan, family) },
+          { name: CHAIN_MSS, rules: clamp },
+        ],
+      },
+    });
+    out.push(
+      attach(
+        family,
+        'mangle',
+        CHAIN_MANGLE,
+        'PREROUTING',
+        ` -i ${plan.wgInterface}`
+      )
+    );
+    out.push(attach(family, 'mangle', CHAIN_MSS, 'FORWARD'));
+  }
+
+  // 3. Connections through forwards this apply no longer has. After the NAT
+  // commit, so the old rule cannot re-create them on the next packet.
   for (const family of families) {
     endForwardConnections(out, family, plan.staleForwards);
   }
 
-  // 7. Rules an earlier apply installed that this one no longer wants. Only
+  // Rules an earlier apply installed that this one no longer wants. Only
   // now, once the chains no longer produce the marks these matched.
   removeStaleRules(out, plan, families, keep);
 
@@ -564,7 +634,7 @@ export function staleForwards(
  * an older image.
  */
 function endForwardConnections(
-  out: string[],
+  out: Step[],
   family: Family,
   forwards: readonly PlanForward[]
 ) {
@@ -576,11 +646,11 @@ function endForwardConnections(
     }
 
     for (const protocol of forward.protocols) {
-      out.push(
-        quiet(
+      out.push({
+        command: quiet(
           `${conntrack} -p ${protocol} --orig-port-dst ${forward.externalPort} -m ${FORWARD_CONNMARK}/${FORWARD_CONNMARK}`
-        )
-      );
+        ),
+      });
     }
   }
 }

@@ -34,16 +34,10 @@ import type { Actor } from '#shared/contracts/identity';
 import type {
   GatewayCreateType,
   GatewayUpdateType,
-} from '#db/repositories/gateway/types';
-import type {
-  PortForwardCreateType,
-  PortForwardUpdateType,
-} from '#db/repositories/portForward/types';
-import type { RoutingConfigUpdateType } from '#db/repositories/routingConfig/types';
-import type {
-  RoutingRuleCreateType,
-  RoutingRuleUpdateType,
-} from '#db/repositories/routingRule/types';
+} from '#shared/contracts/gateway';
+import type { PortForwardInputType } from '#shared/contracts/portForward';
+import type { RoutingConfigUpdateType } from '#shared/contracts/routingConfig';
+import type { RoutingRuleInputType } from '#shared/contracts/routingRule';
 
 function notFound(statusText: string) {
   return createError({ status: 404, statusText });
@@ -56,19 +50,29 @@ function notFound(statusText: string) {
  */
 export async function overview(actor: Actor) {
   authorize(actor, 'admin', 'any');
-  const database = getDatabase();
-  const wgInterface = await database.interfaces.get();
 
-  const [config, gateways, rules, forwards, interfaces, userConfig, clients] =
-    await Promise.all([
-      database.routingConfig.get(),
-      database.gateways.getAll(),
-      database.routingRules.getAll(),
-      database.portForwards.getAll(),
-      listInterfaces([wgInterface.name]),
-      database.userConfigs.get(),
-      database.clients.getAll(),
-    ]);
+  // One snapshot, for the same reason.
+  const {
+    wgInterface,
+    config,
+    gateways,
+    rules,
+    forwards,
+    userConfig,
+    clients,
+  } = await getDatabase().transaction(async (tx) => ({
+    wgInterface: await tx.interfaces.get(),
+    config: await tx.routingConfig.get(),
+    gateways: await tx.gateways.getAll(),
+    rules: await tx.routingRules.getAll(),
+    forwards: await tx.portForwards.getAll(),
+    userConfig: await tx.userConfigs.get(),
+    clients: await tx.clients.getAll(),
+  }));
+  const [interfaces, counts] = await Promise.all([
+    listInterfaces([wgInterface.name]),
+    countAddresses(),
+  ]);
 
   const up = new Map(interfaces.map((entry) => [entry.name, entry.up]));
   const byId = new Map(gateways.map((gateway) => [gateway.id, gateway]));
@@ -82,7 +86,7 @@ export async function overview(actor: Actor) {
       defaultAction: config.defaultAction,
       defaultGatewayId: config.defaultGatewayId,
       dnsUpstreams: config.dnsUpstreams,
-      dnsInterceptEnabled: config.dnsInterceptEnabled,
+      dnsProxyEnabled: config.dnsProxyEnabled,
     },
 
     /** So the UI knows whether a gateway's missing IPv6 is worth mentioning. */
@@ -129,15 +133,13 @@ export async function overview(actor: Actor) {
       })
     ),
 
-    rules: await Promise.all(
-      rules.map(async (rule) => ({
-        ...rule,
-        clients: rule.clients.map((link) => link.client).filter(Boolean),
-        // How many destinations the rule currently matches, including the ones
-        // learned from DNS since the page was last open.
-        addressCount: await countAddresses(rule.id),
-      }))
-    ),
+    rules: rules.map((rule) => ({
+      ...rule,
+      clients: rule.clients.map((link) => link.client),
+      // How many destinations the rule currently matches, including the ones
+      // learned from DNS since the page was last open.
+      addressCount: counts.get(rule.id) ?? 0,
+    })),
 
     forwards: forwards.map((forward) => ({
       ...forward,
@@ -322,7 +324,7 @@ export async function reconnectGateway(actor: Actor, gatewayId: number) {
   }
 }
 
-export async function createRule(actor: Actor, data: RoutingRuleCreateType) {
+export async function createRule(actor: Actor, data: RoutingRuleInputType) {
   authorize(actor, 'admin', 'any');
   await assertRuleReferences(data);
 
@@ -342,7 +344,7 @@ export async function createRule(actor: Actor, data: RoutingRuleCreateType) {
 export async function updateRule(
   actor: Actor,
   ruleId: number,
-  data: RoutingRuleUpdateType
+  data: RoutingRuleInputType
 ) {
   authorize(actor, 'admin', 'any');
   const database = getDatabase();
@@ -411,7 +413,7 @@ export async function resolveRule(actor: Actor, ruleId: number) {
 
   const config = await database.routingConfig.get();
 
-  await ensureSets(ruleId);
+  await ensureSets([ruleId]);
   // No apply afterwards: the sets are already referenced by the live chain,
   // so new members take effect immediately.
   return router.resolve(ruleId, rule.patterns, config.dnsUpstreams);
@@ -432,7 +434,7 @@ export async function clearRule(actor: Actor, ruleId: number) {
 }
 
 function forwardConflict(
-  data: PortForwardCreateType,
+  data: PortForwardInputType,
   conflict: { name: string; protocol: string }
 ) {
   return createError({
@@ -441,7 +443,7 @@ function forwardConflict(
   });
 }
 
-export async function createForward(actor: Actor, data: PortForwardCreateType) {
+export async function createForward(actor: Actor, data: PortForwardInputType) {
   authorize(actor, 'admin', 'any');
   await assertForwardTarget(data);
 
@@ -456,7 +458,7 @@ export async function createForward(actor: Actor, data: PortForwardCreateType) {
 export async function updateForward(
   actor: Actor,
   forwardId: number,
-  data: PortForwardUpdateType
+  data: PortForwardInputType
 ) {
   authorize(actor, 'admin', 'any');
   const database = getDatabase();

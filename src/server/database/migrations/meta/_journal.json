@@ -85,6 +85,13 @@
       "when": 1793645806141,
       "tag": "0011_policy_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793650530340,
+      "tag": "0012_dns_proxy_enabled",
+      "breakpoints": true
     }
   ]
 }

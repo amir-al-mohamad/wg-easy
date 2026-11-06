@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  buildPlan,
+  buildPlan as buildSteps,
   CHAIN_FORWARD,
   CHAIN_MANGLE,
   CHAIN_MSS,
   CHAIN_NAT,
   isEmpty,
   isTeardown,
+  renderRestore,
   staleForwards,
 } from '#server/utils/routing/plan';
 import type {
@@ -15,14 +16,35 @@ import type {
   Plan,
   PlanGateway,
   PlanRule,
+  Step,
 } from '#server/utils/routing/plan';
 import {
   BLOCK_TABLE,
+  FORWARD_CONNMARK,
   MARK_BLOCK,
   MARK_DIRECT,
   RULE_PRIORITY_BLOCK,
   RULE_PRIORITY_DIRECT,
 } from '#server/utils/routing/marks';
+
+/**
+ * The steps as the commands they amount to: a restore reads as the rules it
+ * appends, so assertions about chain contents need not care how they land.
+ */
+function flatten(steps: Step[]) {
+  return steps.flatMap((step) =>
+    'command' in step
+      ? [step.command]
+      : step.restore.chains.flatMap((chain) =>
+          chain.rules.map(
+            (rule) =>
+              `${step.restore.iptables} -t ${step.restore.table} -A ${chain.name} ${rule}`
+          )
+        )
+  );
+}
+
+const buildPlan = (input: Plan) => flatten(buildSteps(input));
 
 function plan(overrides: Partial<Plan> = {}): Plan {
   return {
@@ -73,6 +95,13 @@ function mangleChain(commands: string[], table = 'iptables') {
   );
 }
 
+/** The lines that mark traffic matched by a rule, as opposed to housekeeping. */
+function ruleMarks(commands: string[], table = 'iptables') {
+  return mangleChain(commands, table).filter(
+    (c) => c.includes('-j MARK') && c.includes('-m mark --mark 0x0/0xffff ')
+  );
+}
+
 /** A plan with something in it, so the build path runs rather than teardown. */
 const populated = () => plan({ gateways: [gateway()] });
 
@@ -87,7 +116,7 @@ describe('buildPlan: match order', () => {
       })
     );
 
-    const marks = mangleChain(commands).filter((c) => c.includes('-j MARK'));
+    const marks = ruleMarks(commands).filter((c) => c.includes('--match-set'));
     expect(marks).toHaveLength(2);
 
     // Without the 0x0 guard, `-j MARK` falls through and rule 2 would overwrite
@@ -118,7 +147,7 @@ describe('buildPlan: match order', () => {
     const commands = mangleChain(buildPlan(plan({ rules: [rule({ id: 1 })] })));
 
     const connmark = commands.findIndex((c) =>
-      c.includes('--mark 0xfff/0xfff')
+      c.includes(`--mark ${FORWARD_CONNMARK}/${FORWARD_CONNMARK}`)
     );
     const local = commands.findIndex((c) => c.includes('-d 10.8.0.0/24'));
     const ruleLine = commands.findIndex((c) => c.includes('wgr4_1'));
@@ -130,27 +159,88 @@ describe('buildPlan: match order', () => {
     expect(commands[local]).toContain('-j RETURN');
   });
 
-  test('appends the default action last, guarded the same way', () => {
+  test('appends the default action after every rule, guarded the same way', () => {
     const commands = mangleChain(
       buildPlan(plan({ rules: [rule({ id: 1 })], defaultFwmark: MARK_BLOCK }))
     );
 
-    const last = commands.at(-1)!;
-    expect(last).toContain(`--set-xmark ${MARK_BLOCK}/0xffff`);
-    expect(last).toContain('-m mark --mark 0x0/0xffff');
-    expect(last).not.toContain('--match-set');
+    const fallback = commands.at(-2)!;
+    expect(fallback).toContain(`--set-xmark ${MARK_BLOCK}/0xffff`);
+    expect(fallback).toContain('-m mark --mark 0x0/0xffff');
+    expect(fallback).not.toContain('--match-set');
   });
 
-  test('leaves traffic unmarked when the default is direct', () => {
+  test('marks unmatched traffic direct, so that decision is remembered too', () => {
     const commands = mangleChain(buildPlan(populated()));
-    expect(commands.filter((c) => c.includes('-j MARK'))).toHaveLength(0);
+
+    // Left unmarked, a connection that started direct would be classified
+    // again on every packet, and move into a rule the moment its destination
+    // was learned: out of the NAT mapping it was opened through.
+    expect(commands.at(-2)).toBe(
+      `iptables -t mangle -A ${CHAIN_MANGLE} -m mark --mark 0x0/0xffff -j MARK --set-xmark ${MARK_DIRECT}/0xffff`
+    );
+  });
+});
+
+describe('buildPlan: connections keep their route', () => {
+  const commands = mangleChain(
+    buildPlan(
+      plan({
+        gateways: [gateway({ fwmark: '0x100' }), gateway({ fwmark: '0x101' })],
+        rules: [rule({ id: 1, fwmark: '0x100' })],
+      })
+    )
+  );
+  const index = (needle: string) =>
+    commands.findIndex((c) => c.includes(needle));
+
+  test('restores the remembered route before any rule is consulted', () => {
+    const restore = index('--restore-mark --nfmask 0xffff --ctmask 0xffff');
+    expect(restore).toBeGreaterThan(index('-d 10.8.0.0/24'));
+    expect(restore).toBeLessThan(index('--match-set wgr4_1'));
+  });
+
+  test('keeps a route that still exists, and only those', () => {
+    const kept = commands
+      .filter((c) => c.endsWith('-j RETURN') && c.includes('-m mark --mark'))
+      .map((c) => /--mark (\S+)\//.exec(c)![1]);
+
+    expect(kept.sort()).toEqual(
+      ['0x100', '0x101', MARK_BLOCK, MARK_DIRECT].sort()
+    );
+    expect(index('-m mark --mark 0x100/0xffff -j RETURN')).toBeGreaterThan(
+      index('--restore-mark')
+    );
+  });
+
+  test('forgets a route that is gone, so the connection is classified anew', () => {
+    // A gateway switched off or removed takes its mark with it; a connection
+    // still carrying that mark would otherwise reach no rule and go direct
+    // whatever the policy now says.
+    const forget = index('-j MARK --set-xmark 0x0/0xffff');
+    expect(forget).toBeGreaterThan(
+      index('-m mark --mark 0x101/0xffff -j RETURN')
+    );
+    expect(forget).toBeLessThan(index('--match-set wgr4_1'));
+    expect(commands[forget]).not.toContain('-m mark');
+  });
+
+  test('saves the decision last, after the default', () => {
+    expect(commands.at(-1)).toBe(
+      `iptables -t mangle -A ${CHAIN_MANGLE} -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff`
+    );
+  });
+
+  test('never pins client-to-client traffic', () => {
+    expect(index('-d 10.8.0.0/24 -j RETURN')).toBeLessThan(
+      index('--restore-mark')
+    );
   });
 });
 
 describe('buildPlan: rule scoping', () => {
   test('matches every source when no client is named', () => {
-    const commands = mangleChain(buildPlan(plan({ rules: [rule({ id: 1 })] })));
-    const mark = commands.find((c) => c.includes('-j MARK'))!;
+    const mark = ruleMarks(buildPlan(plan({ rules: [rule({ id: 1 })] })))[0]!;
     expect(mark).not.toContain(' -s ');
   });
 
@@ -169,12 +259,9 @@ describe('buildPlan: rule scoping', () => {
       })
     );
 
-    expect(
-      mangleChain(commands).filter((c) => c.includes('-j MARK'))
-    ).toHaveLength(2);
-    expect(
-      mangleChain(commands, 'ip6tables').filter((c) => c.includes('-j MARK'))
-    ).toHaveLength(2);
+    // Plus the default action, which matches every source.
+    expect(ruleMarks(commands)).toHaveLength(3);
+    expect(ruleMarks(commands, 'ip6tables')).toHaveLength(3);
     expect(commands.some((c) => c.includes('-s 10.8.0.4'))).toBe(true);
     expect(commands.some((c) => c.includes('-s fdcc:ad94::5'))).toBe(true);
   });
@@ -184,13 +271,12 @@ describe('buildPlan: rule scoping', () => {
       plan({ rules: [rule({ id: 1, matchAllV4: true })] })
     );
 
-    const v4 = mangleChain(commands).find((c) => c.includes('-j MARK'))!;
+    const v4 = ruleMarks(commands)[0]!;
+    expect(v4).toContain('--set-xmark 0x100/0xffff');
     expect(v4).not.toContain('--match-set');
 
     // `::/0` was not given, so IPv6 still goes through its set.
-    const v6 = mangleChain(commands, 'ip6tables').find((c) =>
-      c.includes('-j MARK')
-    )!;
+    const v6 = ruleMarks(commands, 'ip6tables')[0]!;
     expect(v6).toContain('--match-set wgr6_1 dst');
   });
 });
@@ -507,7 +593,9 @@ describe('buildPlan: port forwards', () => {
     // The CONNMARK has to be installed for the connection the DNAT creates, so
     // it must come first; otherwise replies carry no mark and the mangle chain
     // reroutes them out a gateway, silently breaking the forward.
-    expect(commands[0]).toContain('-j CONNMARK --set-xmark 0xfff/0xfff');
+    expect(commands[0]).toContain(
+      `-j CONNMARK --set-xmark ${FORWARD_CONNMARK}/${FORWARD_CONNMARK}`
+    );
     expect(commands[1]).toContain('-j DNAT --to-destination 10.8.0.4:22');
     expect(commands[0]).toContain('-p tcp --dport 34000');
   });
@@ -547,13 +635,13 @@ describe('buildPlan: port forwards', () => {
     // Only the forwarded connections, told apart by the mark the DNAT rule
     // set; a client's own connection to port 34000 somewhere keeps its entry.
     expect(ended).toEqual([
-      'conntrack -f ipv4 -D -p tcp --orig-port-dst 34000 -m 0xfff/0xfff 2>/dev/null || true',
-      'conntrack -f ipv6 -D -p tcp --orig-port-dst 34000 -m 0xfff/0xfff 2>/dev/null || true',
+      `conntrack -f ipv4 -D -p tcp --orig-port-dst 34000 -m ${FORWARD_CONNMARK}/${FORWARD_CONNMARK} 2>/dev/null || true`,
+      `conntrack -f ipv6 -D -p tcp --orig-port-dst 34000 -m ${FORWARD_CONNMARK}/${FORWARD_CONNMARK} 2>/dev/null || true`,
     ]);
-    // Deleting an entry before the chain is rebuilt would let the old rule
+    // Deleting an entry before the chain is replaced would let the old rule
     // re-create it on the next packet.
     expect(commands.indexOf(ended[0]!)).toBeGreaterThan(
-      commands.findIndex((c) => c.includes(`-N ${CHAIN_FORWARD}`))
+      commands.findIndex((c) => c.includes(`-A ${CHAIN_FORWARD} `))
     );
   });
 
@@ -615,31 +703,75 @@ describe('buildPlan: chains', () => {
     [CHAIN_FORWARD, 'nat', 'PREROUTING', ''],
   ] as const;
 
-  test('detaches each chain with exactly the specification it attaches it by', () => {
+  test('replaces chain contents in one restore per table, never piecemeal', () => {
+    const steps = buildSteps(populated());
+
+    // Flushing and refilling a live chain rule by rule leaves packets
+    // unmarked meanwhile: a "block" lets them through and a gateway's
+    // connections leave by the wrong path.
+    const commands = steps.flatMap((step) =>
+      'command' in step ? [step.command] : []
+    );
+    expect(
+      commands.filter(
+        (c) => / -[FXN] WG_ROUTER/.test(c) || c.includes(' -A WG_ROUTER')
+      )
+    ).toEqual([]);
+
+    const restores = steps.flatMap((step) =>
+      'restore' in step ? [step.restore] : []
+    );
+    expect(
+      restores.map(
+        (r) =>
+          `${r.iptables} ${r.table}: ${r.chains.map((c) => c.name).join(' ')}`
+      )
+    ).toEqual([
+      `iptables nat: ${CHAIN_NAT} ${CHAIN_FORWARD}`,
+      `ip6tables nat: ${CHAIN_NAT} ${CHAIN_FORWARD}`,
+      `iptables mangle: ${CHAIN_MANGLE} ${CHAIN_MSS}`,
+      `ip6tables mangle: ${CHAIN_MANGLE} ${CHAIN_MSS}`,
+    ]);
+  });
+
+  test('attaches each chain once, checking before it appends', () => {
     const commands = buildPlan(populated());
 
     for (const [chain, table, parent, match] of chains) {
       const jump = `${parent}${match} -j ${chain}`;
-      const attach = `iptables -t ${table} -A ${jump}`;
-      expect(commands).toContain(attach);
-
-      // `iptables -D` only removes a rule whose specification matches exactly.
-      // A detach missing the `-i wg0` the attach carries would never match,
-      // and every apply would append one more jump.
-      const detach = commands.find(
-        (c) => c.includes(`iptables -t ${table} -D ${jump}`) && isTeardown(c)
+      // The jump stays put across applies; only the chain's contents change.
+      expect(commands).toContain(
+        `iptables -t ${table} -C ${jump} 2>/dev/null || iptables -t ${table} -A ${jump}`
       );
-      expect(detach).toBeDefined();
-      expect(commands.indexOf(detach!)).toBeLessThan(commands.indexOf(attach));
     }
   });
 
-  test('removes every duplicate jump, not just one', () => {
-    const commands = buildPlan(populated());
-    const detach = commands.find((c) =>
-      c.includes(`-D PREROUTING -i wg0 -j ${CHAIN_MANGLE}`)
-    )!;
-    expect(detach).toMatch(/^while .*; do :; done/);
+  test('detaches with the exact specification, every duplicate, on teardown', () => {
+    const commands = buildPlan(plan());
+
+    for (const [chain, table, parent, match] of chains) {
+      // `iptables -D` only removes a rule whose specification matches
+      // exactly; a detach missing the `-i wg0` would never match.
+      const detach = commands.find((c) =>
+        c.includes(`iptables -t ${table} -D ${parent}${match} -j ${chain}`)
+      );
+      expect(detach).toMatch(/^while .*; do :; done/);
+    }
+  });
+
+  test('renders a restore that declares, fills and commits its chains', () => {
+    expect(
+      renderRestore({
+        iptables: 'iptables',
+        table: 'nat',
+        chains: [
+          { name: 'A', rules: ['-o tun0 -j MASQUERADE'] },
+          { name: 'B', rules: [] },
+        ],
+      })
+    ).toBe(
+      '*nat\n:A - [0:0]\n:B - [0:0]\n-A A -o tun0 -j MASQUERADE\nCOMMIT\n'
+    );
   });
 
   test('marks removals as tolerable failures and creations as not', () => {

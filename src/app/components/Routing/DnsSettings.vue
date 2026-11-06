@@ -2,21 +2,21 @@
   <div class="flex flex-col gap-3">
     <div class="flex items-center gap-3">
       <RoutingToggleSwitch
-        id="dns-intercept"
-        :model-value="config.dnsInterceptEnabled"
-        :title="$t('admin.routing.dnsSettings.intercept')"
-        @update:model-value="setIntercept"
+        id="dns-proxy"
+        :model-value="config.dnsProxyEnabled"
+        :title="$t('admin.routing.dnsSettings.proxy')"
+        @update:model-value="setProxy"
       />
-      <RoutingLabel for="dns-intercept">
-        {{ $t('admin.routing.dnsSettings.intercept') }}
+      <RoutingLabel for="dns-proxy">
+        {{ $t('admin.routing.dnsSettings.proxy') }}
       </RoutingLabel>
     </div>
 
     <p class="max-w-prose text-xs text-subtle">
-      {{ $t('admin.routing.dnsSettings.interceptHelp') }}
+      {{ $t('admin.routing.dnsSettings.proxyHelp') }}
     </p>
 
-    <div v-if="config.dnsInterceptEnabled" class="flex flex-col gap-1">
+    <div v-if="config.dnsProxyEnabled" class="flex flex-col gap-1">
       <RoutingLabel for="dns-upstreams">
         {{ $t('admin.routing.dnsSettings.upstreams') }}
       </RoutingLabel>
@@ -40,7 +40,7 @@
       </p>
     </div>
 
-    <div v-if="config.dnsInterceptEnabled" class="flex flex-col gap-1">
+    <div v-if="config.dnsProxyEnabled" class="flex flex-col gap-1">
       <span class="text-sm font-medium text-muted">
         {{ $t('admin.routing.dnsSettings.handedOut') }}
       </span>
@@ -63,8 +63,6 @@
 </template>
 
 <script lang="ts" setup>
-import type { DnsStatus, RoutingConfig } from '#shared/utils/routingTypes';
-
 const props = defineProps<{ config: RoutingConfig; dns: DnsStatus }>();
 
 const emit = defineEmits<{ changed: []; useProxy: [] }>();
@@ -109,8 +107,8 @@ function saveConfig(changes: Partial<RoutingConfig>) {
   return save({ ...props.config, ...changes });
 }
 
-function setIntercept(enabled: boolean) {
-  return saveConfig({ dnsInterceptEnabled: enabled });
+function setProxy(enabled: boolean) {
+  return saveConfig({ dnsProxyEnabled: enabled });
 }
 
 function saveUpstreams() {

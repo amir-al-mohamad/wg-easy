@@ -39,7 +39,8 @@ export const BLOCK_TABLE = 251;
 /**
  * Only the low sixteen bits of the packet mark are ours. Matching and setting
  * through this mask leaves anything another subsystem keeps in the high bits
- * untouched.
+ * untouched. The connection mark uses the same sixteen bits to remember the
+ * route a connection was given, so every later packet takes it too.
  */
 export const MARK_MASK = '0xffff';
 
@@ -55,10 +56,11 @@ export const RULE_PRIORITY_BLOCK = GATEWAY_TABLE_MAX + 2;
 export const RULE_PRIORITY_MAX = RULE_PRIORITY_BLOCK;
 
 /**
- * Connection mark on inbound DNAT'd connections, so their replies bypass
- * policy; see the forwards section of the plan.
+ * Connection mark bit on inbound DNAT'd connections, so their replies bypass
+ * policy; see the forwards section of the plan. Above {@link MARK_MASK}, so
+ * it never collides with a route remembered in the low bits.
  */
-export const FORWARD_CONNMARK = '0xfff';
+export const FORWARD_CONNMARK = '0x10000';
 
 /**
  * Name of the address set holding one rule's destinations for one family.

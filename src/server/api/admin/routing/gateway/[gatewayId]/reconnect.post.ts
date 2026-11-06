@@ -1,7 +1,7 @@
 import * as routing from '#server/features/routing';
 import { defineAuthenticatedEventHandler } from '#server/utils/handler';
 import { validateZod, getValidatedRouterParams } from '#server/http/validation';
-import { GatewayGetSchema } from '#db/repositories/gateway/types';
+import { GatewayGetSchema } from '#shared/contracts/gateway';
 
 export default defineAuthenticatedEventHandler(async ({ event, user }) => {
   const { gatewayId } = await getValidatedRouterParams(

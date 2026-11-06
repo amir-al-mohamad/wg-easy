@@ -1,8 +1,8 @@
 import { asc, eq, max } from 'drizzle-orm';
 
 import { routingRule, routingRuleClient } from './schema';
-import type { RoutingRuleCreateType, RoutingRuleUpdateType } from './types';
 
+import type { RoutingRuleInputType } from '#shared/contracts/routingRule';
 import type { DBExecutor } from '#db/types';
 
 /**
@@ -68,7 +68,7 @@ export class RoutingRuleRepository {
     });
   }
 
-  async create(data: RoutingRuleCreateType) {
+  async create(data: RoutingRuleInputType) {
     const { clientIds, ...rule } = data;
 
     return this.db.transaction(async (tx) => {
@@ -93,7 +93,7 @@ export class RoutingRuleRepository {
     });
   }
 
-  async update(id: number, data: RoutingRuleUpdateType) {
+  async update(id: number, data: RoutingRuleInputType) {
     const { clientIds, ...rule } = data;
 
     return this.db.transaction(async (tx) => {

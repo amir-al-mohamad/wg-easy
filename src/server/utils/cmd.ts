@@ -4,11 +4,16 @@ import { createDebug } from 'obug';
 
 const CMD_DEBUG = createDebug('CMD');
 
+type ExecOptions = {
+  log: boolean | string;
+  maxBuffer?: number;
+  /** Written to the command's stdin, for batch input such as `iptables-restore`. */
+  input?: string;
+};
+
 export function exec(
   cmd: string,
-  { log, maxBuffer }: { log: boolean | string; maxBuffer?: number } = {
-    log: true,
-  }
+  { log, maxBuffer, input }: ExecOptions = { log: true }
 ) {
   if (typeof log === 'string') {
     CMD_DEBUG(`$ ${log}`);
@@ -21,7 +26,7 @@ export function exec(
   }
 
   return new Promise<string>((resolve, reject) => {
-    childProcess.exec(
+    const child = childProcess.exec(
       cmd,
       {
         shell: 'bash',
@@ -34,5 +39,6 @@ export function exec(
         return resolve(String(stdout).trim());
       }
     );
+    child.stdin?.end(input);
   });
 }

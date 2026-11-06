@@ -172,6 +172,22 @@ and `::/0` mean all traffic.
 A rule applies to every client unless you name specific ones, which is how you
 send one device through a gateway while another goes direct on the same sites.
 
+### Connections keep their route
+
+The route is decided on a connection's first packet and kept for its whole
+life, so a connection is never moved halfway through: it would lose the address
+it was opened from and stall. In practice:
+
+- Editing rules or the default route applies to **new connections**. Ones
+  already open finish the way they started.
+- Switching a gateway off or removing it moves its connections at once: they are
+  decided again by the rules as they are now.
+- A gateway whose link drops takes its connections down the chain set under
+  [When a gateway goes away](#when-a-gateway-goes-away), the same as new ones.
+
+Rules and their address lists are swapped into the kernel in a single step, so
+an edit never leaves traffic briefly unrouted or unblocked.
+
 Each rule with domains also has:
 
 - **Look up now**: resolve the domains immediately and add what comes back.
@@ -189,9 +205,13 @@ clients' DNS lookups itself and notes the addresses as they come back, adding
 them to the matching rule.
 
 It answers only on its own tunnel addresses, over UDP and TCP, and only to
-clients on the tunnel. Lookups from a client are learned only into rules that
-cover that client, and answers pointing at private, link-local or tunnel
-addresses are never learned.
+clients on the tunnel; a lookup that arrives over TCP, typically an answer too
+large for UDP, is passed upstream over TCP too. Lookups from a client are
+learned only into rules that cover that client, and answers pointing at
+private, link-local or tunnel addresses are never learned.
+
+The addresses are added to the rule before the answer goes back, so the
+client's very first connection to them already takes the rule's route.
 
 This only works for lookups it gets to see. **A client configured to use a public
 resolver bypasses the whole mechanism**, and the failure is invisible: the rule
@@ -207,8 +227,8 @@ downloaded again.
 
 An address learned this way stays matchable for twice the record's own lifetime:
 at least five minutes, at most a day. While traffic is still flowing to it, that
-is extended further, so a long download or a call does not change route halfway
-through.
+is extended further, so a client that reconnects to an address it looked up long
+ago still finds it in the rule.
 
 Turning the resolver off releases port 53, and rules stop learning from client
 lookups. Rules with **Keep addresses up to date** still resolve their domains on
@@ -283,4 +303,5 @@ what was run and what failed.
 
 If the tools are reported missing, see the FAQ for the kernel modules involved:
 `ip_set`, `ip_set_hash_net`, `xt_set`, `iptable_mangle` and, with IPv6,
-`ip6table_mangle`.
+`ip6table_mangle`. They are looked for again every minute, so loading the
+modules on the host is enough; the container does not need a restart.

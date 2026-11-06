@@ -6,6 +6,7 @@ import { isForwardPortPublished } from './env';
 import {
   awaitHandshake,
   defaultRoutes,
+  fwmarkRules,
   handshakeAge,
   handshakeStale,
   hasGlobalIpv6,
@@ -16,12 +17,11 @@ import {
 } from './interfaces';
 import type { TableRoute } from './interfaces';
 import {
-  addAddress,
-  canonical,
+  changeSets,
   destroyOrphanSets,
   ensureSets,
   listAddresses,
-  removeAddress,
+  type SetChange,
 } from './ipset';
 import { withRoutingLock } from './lock';
 import {
@@ -35,21 +35,31 @@ import {
   isEmpty,
   isTeardown,
   MAX_FALLBACKS,
+  renderRestore,
   staleForwards,
 } from './plan';
-import type { InstalledRule, Plan, PlanForward, PlanRule } from './plan';
+import type { Plan, PlanForward, PlanRule, Step } from './plan';
 
 import { getDatabase } from '#db';
 import type { Repositories } from '#db/store';
 import { exec } from '#server/utils/cmd';
 import { WG_ENV } from '#server/utils/config';
-import type { ApplyStatus } from '#shared/utils/routingTypes';
+import { canonical } from '#shared/utils/address';
 
 const ROUTER_DEBUG = createDebug('Router');
 
 type RuleWithRelations = Awaited<
   ReturnType<Repositories['routingRules']['getAll']>
 >[number];
+
+/** How the last kernel apply went. */
+export type ApplyStatus = {
+  at: number | null;
+  /** Steps that failed; -1 when the apply itself threw. */
+  failures: number;
+  /** Whether the tools are present, so applying is possible at all. */
+  available: boolean;
+};
 
 /** How the last apply went, for the UI; the kernel is the only other place it shows. */
 const status: ApplyStatus = { at: null, failures: 0, available: false };
@@ -59,14 +69,13 @@ export function applyStatus(): ApplyStatus {
 }
 
 /**
- * Whether the tools the router needs are present. Probed once, like
- * `firewall.isAvailable()`; a missing tool switches the feature off rather
- * than letting every command fail quietly.
+ * Whether the tools the router needs are present. A missing tool switches the
+ * feature off rather than letting every command fail quietly.
  */
-export async function isAvailable(): Promise<boolean> {
+async function isAvailable(): Promise<boolean> {
   try {
     await exec('ipset list -name', { log: false });
-    await exec('ip -4 rule list', { log: false });
+    await exec('ip -j -4 rule list', { log: false });
     await exec('iptables -t mangle -L -n', { log: false });
     return true;
   } catch (error) {
@@ -75,8 +84,28 @@ export async function isAvailable(): Promise<boolean> {
   }
 }
 
-// `100:	from all fwmark 0x100/0xffff lookup 100`
-const RULE_LINE = /^(\d+):\s+from all fwmark (\S+) lookup (\S+)/;
+/** How often missing tools are looked for again. */
+const PROBE_INTERVAL_MS = 60_000;
+let probedAt = 0;
+
+/**
+ * Probe again for tools found missing, at most once a minute: the FAQ's fix
+ * is loading kernel modules on the host, which should not also need a
+ * container restart to take effect.
+ *
+ * @returns whether the tools have just become available
+ */
+async function reprobe() {
+  if (status.available || Date.now() - probedAt < PROBE_INTERVAL_MS) {
+    return false;
+  }
+  probedAt = Date.now();
+  status.available = await isAvailable();
+  if (status.available) {
+    ROUTER_DEBUG('Routing tools are available now');
+  }
+  return status.available;
+}
 
 /**
  * Our rules currently installed, read from the kernel: a crash mid-apply or
@@ -84,31 +113,17 @@ const RULE_LINE = /^(\d+):\s+from all fwmark (\S+) lookup (\S+)/;
  * fwmark rules inside our priority band count as ours.
  */
 async function installedRules() {
-  const read = async (family: '-4' | '-6'): Promise<InstalledRule[]> => {
-    try {
-      const output = await exec(`ip ${family} rule list`, { log: false });
-      const rules: InstalledRule[] = [];
+  const ours = (rules: Awaited<ReturnType<typeof fwmarkRules>>) =>
+    rules.filter(
+      (rule) =>
+        rule.priority >= RULE_PRIORITY_MIN && rule.priority <= RULE_PRIORITY_MAX
+    );
 
-      for (const line of output.split('\n')) {
-        const match = RULE_LINE.exec(line.trim());
-        if (!match) {
-          continue;
-        }
-
-        const priority = Number(match[1]);
-        if (priority < RULE_PRIORITY_MIN || priority > RULE_PRIORITY_MAX) {
-          continue;
-        }
-        rules.push({ priority, fwmark: match[2]!, table: match[3]! });
-      }
-      return rules;
-    } catch {
-      return [];
-    }
-  };
-
-  const [v4, v6] = await Promise.all([read('-4'), read('-6')]);
-  return { v4, v6 };
+  const [v4, v6] = await Promise.all([
+    fwmarkRules('-4'),
+    WG_ENV.DISABLE_IPV6 ? [] : fwmarkRules('-6'),
+  ]);
+  return { v4: ours(v4), v6: ours(v6) };
 }
 
 /**
@@ -118,35 +133,37 @@ async function installedRules() {
  * since the kernel prints `1.2.3.4/32` back as `1.2.3.4`.
  */
 async function syncSets(rules: readonly RuleWithRelations[]) {
-  for (const rule of rules) {
-    await ensureSets(rule.id);
+  await ensureSets(rules.map((rule) => rule.id));
 
+  const changes: SetChange[] = [];
+  for (const rule of rules) {
     const configured = new Set(
       rule.addresses
         .map((address) => canonical(address))
         .filter((entry) => entry !== null && !entry.catchAll)
         .map((entry) => entry!.address)
     );
-    const present = await listAddresses(rule.id);
+    // Only permanent entries are the rule's own; learned ones (with a
+    // timeout) are left to expire. A configured address that was learned
+    // first is added again without a timeout, which makes it permanent.
+    const permanent = new Set(
+      (await listAddresses(rule.id))
+        .filter((entry) => entry.timeout === 0)
+        .map((entry) => entry.address)
+    );
 
-    for (const entry of present) {
-      if (entry.timeout !== 0) {
-        continue;
-      } // learned from DNS; let it expire
-      if (configured.has(entry.address)) {
-        continue;
+    for (const address of permanent) {
+      if (!configured.has(address)) {
+        changes.push({ op: 'del', ruleId: rule.id, address });
       }
-      await removeAddress(rule.id, entry.address);
     }
-
-    const existing = new Set(present.map((entry) => entry.address));
     for (const address of configured) {
-      if (existing.has(address)) {
-        continue;
+      if (!permanent.has(address)) {
+        changes.push({ op: 'add', ruleId: rule.id, address });
       }
-      await addAddress(rule.id, address, 0);
     }
   }
+  await changeSets(changes);
 }
 
 function markFor(
@@ -339,12 +356,13 @@ let installedForwards: PlanForward[] = [];
  * drops a route through a link when the link goes down or away and never
  * puts it back, so the route is watched, not just the link. Compared against
  * what the last apply left behind rather than the previous probe, so an
- * apply an edit already triggered is not repeated.
+ * apply an edit already triggered is not repeated. Tools that were missing
+ * and have since appeared count as a change too.
  */
 export async function presenceChanged() {
   // Without the tools nothing was ever applied, and nothing can be.
   if (!status.available) {
-    return false;
+    return reprobe();
   }
 
   const gateways = await getDatabase().gateways.getAll();
@@ -352,14 +370,33 @@ export async function presenceChanged() {
   return summarize(await observe(active)) !== seen;
 }
 
+/** Run one step, logging a restore by what it replaces rather than its input. */
+async function run(step: Step) {
+  if ('command' in step) {
+    await exec(step.command, { log: !isTeardown(step.command) });
+    return;
+  }
+
+  const { iptables, table, chains } = step.restore;
+  const summary = chains
+    .map((chain) => `${chain.name}(${chain.rules.length})`)
+    .join(' ');
+  await exec(`${iptables}-restore -w --noflush`, {
+    input: renderRestore(step.restore),
+    log: `${iptables}-restore -w --noflush  # ${table}: ${summary}`,
+  });
+}
+
 async function rebuild() {
-  const wgInterface = await getDatabase().interfaces.get();
-  const [config, gateways, rules, forwards] = await Promise.all([
-    getDatabase().routingConfig.get(),
-    getDatabase().gateways.getAll(),
-    getDatabase().routingRules.getAll(),
-    getDatabase().portForwards.getAll(),
-  ]);
+  // One snapshot, so a rule never points at a gateway this apply did not read.
+  const { wgInterface, config, gateways, rules, forwards } =
+    await getDatabase().transaction(async (tx) => ({
+      wgInterface: await tx.interfaces.get(),
+      config: await tx.routingConfig.get(),
+      gateways: await tx.gateways.getAll(),
+      rules: await tx.routingRules.getAll(),
+      forwards: await tx.portForwards.getAll(),
+    }));
 
   const enableIpv6 = !WG_ENV.DISABLE_IPV6;
   const addresses = serverAddresses(wgInterface);
@@ -385,7 +422,7 @@ async function rebuild() {
 
   // Started and stopped from here rather than once at boot, so turning the
   // setting off actually releases the port.
-  if (config.dnsInterceptEnabled) {
+  if (config.dnsProxyEnabled) {
     startDnsProxy();
   } else {
     stopDnsProxy();
@@ -518,28 +555,41 @@ async function rebuild() {
     await syncSets(rules);
   }
 
-  const commands = buildPlan(plan);
+  const steps = buildPlan(plan);
   ROUTER_DEBUG(
     isEmpty(plan)
-      ? `Nothing configured; removing routing state: ${commands.length} commands`
-      : `Applying ${planRules.length} rule(s) across ${planGateways.length} gateway(s): ${commands.length} commands`
+      ? `Nothing configured; removing routing state: ${steps.length} steps`
+      : `Applying ${planRules.length} rule(s) across ${planGateways.length} gateway(s): ${steps.length} steps`
   );
 
   let failures = 0;
-  for (const command of commands) {
-    const teardown = isTeardown(command);
+  let forwardsCommitted = true;
+  for (const step of steps) {
     try {
-      await exec(command, { log: !teardown });
+      await run(step);
     } catch (error) {
       // Teardown swallows its own failures, so this is a real problem. Keep
-      // going: a ruleset missing one line beats one abandoned halfway.
+      // going: a refused restore leaves its chains as they were, and the
+      // rest of the apply still brings everything else up to date.
       failures++;
-      ROUTER_DEBUG(`Command failed: ${command}`, error);
+      if ('restore' in step && step.restore.table === 'nat') {
+        forwardsCommitted = false;
+      }
+      ROUTER_DEBUG(
+        'command' in step
+          ? `Command failed: ${step.command}`
+          : `Restore refused, ${step.restore.table} chains unchanged`,
+        error
+      );
     }
   }
 
   await destroyOrphanSets(isEmpty(plan) ? [] : rules.map((rule) => rule.id));
-  installedForwards = planForwards;
+  // A refused NAT commit left the previous forwards in place, so they stay
+  // the baseline the next apply ends stale connections against.
+  if (forwardsCommitted) {
+    installedForwards = planForwards;
+  }
 
   // What this apply left behind, for the presence pass. Routes are read back
   // rather than assumed, so a failed command is not remembered as done; the
@@ -550,7 +600,7 @@ async function rebuild() {
   status.at = Date.now();
   status.failures = failures;
   if (failures > 0) {
-    ROUTER_DEBUG(`${failures} command(s) failed; routing may be incomplete`);
+    ROUTER_DEBUG(`${failures} step(s) failed; routing may be incomplete`);
   }
 }
 
@@ -599,10 +649,11 @@ export async function reconnectGateway(
 
 /** Called once, after the WireGuard interface is up. */
 export async function startRouting() {
+  probedAt = Date.now();
   status.available = await isAvailable();
   if (!status.available) {
     console.warn(
-      'WARNING: Policy routing needs ipset, iproute2 and the iptables mangle table, and one of them is not available. Routing rules will not be applied.'
+      'WARNING: Policy routing needs ipset, iproute2 and the iptables mangle table, and one of them is not available. Routing rules will not be applied until they are.'
     );
     return;
   }

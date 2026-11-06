@@ -121,12 +121,7 @@
 </template>
 
 <script lang="ts" setup>
-import type {
-  RoutingAction,
-  RoutingClient,
-  RoutingGateway,
-  RoutingRule,
-} from '#shared/utils/routingTypes';
+import type { RoutingAction } from '#shared/utils/routing';
 
 const props = defineProps<{
   /** Absent when creating. */
@@ -139,10 +134,12 @@ const emit = defineEmits<{ saved: []; cancel: [] }>();
 
 const { t } = useI18n();
 
+const newRuleAction: RoutingAction = 'gateway';
+
 const form = reactive({
   name: props.rule?.name ?? '',
   description: props.rule?.description ?? '',
-  action: (props.rule?.action ?? 'gateway') as RoutingAction,
+  action: props.rule?.action ?? newRuleAction,
   gatewayId: props.rule?.gatewayId ?? null,
   autoResolve: props.rule?.autoResolve ?? false,
   clientIds: props.rule?.clients.map((client) => client.id) ?? [],
@@ -156,24 +153,18 @@ const addressesText = ref((props.rule?.addresses ?? []).join('\n'));
 // One control for "gateway" and "which gateway", which the data models as two
 // fields.
 const actionValue = computed({
-  get: () =>
-    form.action === 'gateway' ? `gateway:${form.gatewayId ?? ''}` : form.action,
-  set: (value: string | number | null) => {
-    const text = String(value);
-    if (text.startsWith('gateway:')) {
-      form.action = 'gateway';
-      form.gatewayId = Number(text.slice('gateway:'.length));
-    } else {
-      form.action = text as RoutingAction;
-      form.gatewayId = null;
+  get: () => toActionChoice(form.action, form.gatewayId),
+  set: (choice: ActionChoice | undefined) => {
+    if (choice) {
+      Object.assign(form, fromActionChoice(choice));
     }
   },
 });
 
-const actionOptions = computed(() => [
+const actionOptions = computed<{ label: string; value: ActionChoice }[]>(() => [
   ...props.gateways.map((gateway) => ({
     label: t('admin.routing.action.viaGateway', { name: gateway.name }),
-    value: `gateway:${gateway.id}`,
+    value: gatewayChoice(gateway.id),
   })),
   { label: t('admin.routing.action.direct'), value: 'direct' },
   { label: t('admin.routing.action.block'), value: 'block' },

@@ -33,6 +33,14 @@ export async function list(actor: Actor, query: ClientQueryType) {
   };
 }
 
+/** Names and addresses of the clients the actor may see, for pickers. */
+export function names(actor: Actor) {
+  authorize(actor, 'clients', 'custom');
+  return getDatabase().clients.getNames(
+    actor.role === roles.ADMIN ? undefined : actor.id
+  );
+}
+
 export async function get(actor: Actor, id: number) {
   const client = authorizeClient(
     actor,

@@ -8,7 +8,7 @@
     </p>
 
     <p v-if="problem === 'off'" class="mt-3 text-sm text-foreground">
-      {{ $t('admin.routing.dns.interceptOff') }}
+      {{ $t('admin.routing.dns.proxyOff') }}
     </p>
 
     <p
@@ -70,11 +70,9 @@
 </template>
 
 <script lang="ts" setup>
-import type { DnsStatus } from '#shared/utils/routingTypes';
-
 const props = defineProps<{
   dns: DnsStatus;
-  interceptEnabled: boolean;
+  proxyEnabled: boolean;
   /** Whether any enabled rule actually matches on domains. */
   hasDomainRules: boolean;
 }>();
@@ -90,7 +88,7 @@ const problem = computed(() => {
   if (!props.hasDomainRules) {
     return null;
   }
-  if (!props.interceptEnabled) {
+  if (!props.proxyEnabled) {
     return 'off';
   }
   if (!props.dns.listening) {

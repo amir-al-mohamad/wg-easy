@@ -17,7 +17,7 @@
         <span
           class="rounded-md bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted"
         >
-          {{ PROTOCOL_LABELS[forward.protocol] }}
+          {{ forwardProtocolLabels[forward.protocol] }}
         </span>
 
         <span
@@ -72,8 +72,8 @@
 </template>
 
 <script lang="ts" setup>
-import { PROTOCOL_LABELS } from '#shared/utils/routingTypes';
-import type { PortForward } from '#shared/utils/routingTypes';
+import type { PortForwardInputType } from '#shared/contracts/portForward';
+import { forwardProtocolLabels } from '#shared/utils/routing';
 
 defineProps<{ forwards: PortForward[] }>();
 
@@ -84,11 +84,8 @@ const { t } = useI18n();
 const refresh = async () => emit('changed');
 
 const save = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/forward/${(data as { id: number }).id}`, {
-      method: 'post',
-      body: data,
-    }),
+  ({ id, ...body }: PortForwardInputType & { id: number }) =>
+    $fetch(`/api/admin/routing/forward/${id}`, { method: 'post', body }),
   { revert: refresh, noSuccessToast: true }
 );
 
@@ -106,10 +103,8 @@ function toggle(forward: PortForward, enabled: boolean) {
 }
 
 const destroy = useSubmit(
-  (data) =>
-    $fetch(`/api/admin/routing/forward/${(data as { id: number }).id}`, {
-      method: 'delete',
-    }),
+  (forward: { id: number }) =>
+    $fetch(`/api/admin/routing/forward/${forward.id}`, { method: 'delete' }),
   { revert: refresh, successMsg: t('admin.routing.forwards.removed') }
 );
 

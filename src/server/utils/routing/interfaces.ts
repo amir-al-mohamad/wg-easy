@@ -29,10 +29,95 @@ const PLUMBING = [
   'virbr',
 ];
 
-const LINK_LINE = /^\d+:\s+([^:@\s]+)(?:@\S+)?:\s+<([^>]*)>/;
-
 function isPlumbing(name: string) {
   return PLUMBING.some((prefix) => name === prefix || name.startsWith(prefix));
+}
+
+/**
+ * Run `ip -j` and parse its JSON. iproute2's text output is meant for people
+ * and shifts between versions; the JSON is the stable interface. Empty output
+ * (nothing matched, or not Linux) reads as an empty list.
+ */
+async function ipJson(args: string): Promise<unknown[]> {
+  const output = await exec(`ip -j ${args}`, { log: false });
+  if (!output) {
+    return [];
+  }
+  const parsed: unknown = JSON.parse(output);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+type IpLink = { ifname?: string; flags?: string[] };
+type IpRoute = { type?: string; dst?: string; dev?: string; metric?: number };
+type IpAddress = { addr_info?: { local?: string }[] };
+type IpRule = {
+  priority?: number;
+  src?: string;
+  fwmark?: string;
+  fwmask?: string;
+  table?: string;
+} & Record<string, unknown>;
+
+/** Name and up state of each link in `ip -j link show` output. */
+export function parseLinks(links: readonly unknown[]) {
+  return (links as IpLink[])
+    .filter((link) => typeof link.ifname === 'string' && link.ifname)
+    .map((link) => ({
+      name: link.ifname!,
+      up: (link.flags ?? []).includes('UP'),
+    }));
+}
+
+/** The default routes in `ip -j route show table …` output. */
+export function parseDefaultRoutes(routes: readonly unknown[]): TableRoute[] {
+  return (routes as IpRoute[])
+    .filter((route) => route.dst === 'default')
+    .map((route) => ({ metric: route.metric ?? 0, dev: route.dev ?? null }));
+}
+
+/** Whether `ip -j addr show … scope global` found any address. */
+export function hasAddress(addresses: readonly unknown[]) {
+  return (addresses as IpAddress[]).some((entry) =>
+    (entry.addr_info ?? []).some((info) => Boolean(info.local))
+  );
+}
+
+/** Subnets in `ip -j route show dev …` output, link-local left out. */
+export function parseSubnets(routes: readonly unknown[]) {
+  return (
+    (routes as IpRoute[])
+      .map((route) => route.dst ?? '')
+      .filter((prefix) => prefix.includes('/'))
+      // Link-local is never a routing target worth preserving.
+      .filter((prefix) => !prefix.toLowerCase().startsWith('fe80:'))
+  );
+}
+
+/** A `from all fwmark … lookup …` rule, as `ip rule` reports it. */
+export type FwmarkRule = { priority: number; fwmark: string; table: string };
+
+const RULE_KEYS = new Set(['priority', 'src', 'fwmark', 'fwmask', 'table']);
+
+/**
+ * The rules in `ip -j rule list` output that select on a mark and nothing
+ * else. One with any other selector (an input interface, a source) is not one
+ * of ours, whatever its priority.
+ */
+export function parseFwmarkRules(rules: readonly unknown[]): FwmarkRule[] {
+  return (rules as IpRule[])
+    .filter(
+      (rule) =>
+        typeof rule.priority === 'number' &&
+        rule.fwmark &&
+        rule.table &&
+        (rule.src ?? 'all') === 'all' &&
+        Object.keys(rule).every((key) => RULE_KEYS.has(key))
+    )
+    .map((rule) => ({
+      priority: rule.priority!,
+      fwmark: `${rule.fwmark}/${rule.fwmask ?? '0xffffffff'}`,
+      table: String(rule.table),
+    }));
 }
 
 /**
@@ -43,35 +128,18 @@ function isPlumbing(name: string) {
 export async function listInterfaces(
   reserved: readonly string[] = []
 ): Promise<SystemInterface[]> {
-  let output: string;
+  let links: ReturnType<typeof parseLinks>;
   try {
-    output = await exec('ip -o link show', { log: false });
+    links = parseLinks(await ipJson('link show'));
   } catch (error) {
     ROUTER_DEBUG('Failed to list interfaces:', error);
     return [];
   }
 
-  const interfaces: SystemInterface[] = [];
-
-  for (const line of output.split('\n')) {
-    const match = LINK_LINE.exec(line.trim());
-    if (!match) {
-      continue;
-    }
-
-    const [, name, flags] = match;
-    if (!name || reserved.includes(name)) {
-      continue;
-    }
-
-    interfaces.push({
-      name,
-      up: (flags ?? '').split(',').includes('UP'),
-      suggested: !isPlumbing(name),
-    });
-  }
-
-  return interfaces.sort((a, b) => a.name.localeCompare(b.name));
+  return links
+    .filter((link) => !reserved.includes(link.name))
+    .map((link) => ({ ...link, suggested: !isPlumbing(link.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -80,9 +148,9 @@ export async function listInterfaces(
  */
 export async function interfaceUp(name: string): Promise<boolean> {
   try {
-    const output = await exec(`ip -o link show ${name}`, { log: false });
-    const match = LINK_LINE.exec(output.trim());
-    return (match?.[2] ?? '').split(',').includes('UP');
+    return parseLinks(await ipJson(`link show dev ${name}`)).some(
+      (link) => link.up
+    );
   } catch {
     return false;
   }
@@ -100,27 +168,9 @@ export async function defaultRoutes(
   table: number
 ): Promise<TableRoute[]> {
   try {
-    const output = await exec(`ip ${family} route show table ${table}`, {
-      log: false,
-    });
-    const routes: TableRoute[] = [];
-
-    // `default dev tun0 scope link metric 100`, `blackhole default metric 200`
-    // and `throw default metric 200` are the only shapes we ever put there.
-    for (const line of output.split('\n')) {
-      const tokens = line.trim().split(/\s+/);
-      if (!tokens.includes('default')) {
-        continue;
-      }
-
-      const dev = tokens.indexOf('dev');
-      const metric = tokens.indexOf('metric');
-      routes.push({
-        metric: metric >= 0 ? Number(tokens[metric + 1]) : 0,
-        dev: dev >= 0 ? (tokens[dev + 1] ?? null) : null,
-      });
-    }
-    return routes;
+    return parseDefaultRoutes(
+      await ipJson(`${family} route show table ${table}`)
+    );
   } catch {
     return [];
   }
@@ -133,10 +183,7 @@ export async function defaultRoutes(
  */
 export async function hasGlobalIpv6(name: string): Promise<boolean> {
   try {
-    const output = await exec(`ip -6 -o addr show dev ${name} scope global`, {
-      log: false,
-    });
-    return output.trim().length > 0;
+    return hasAddress(await ipJson(`-6 addr show dev ${name} scope global`));
   } catch {
     return false;
   }
@@ -152,18 +199,8 @@ export async function localSubnets(
 ): Promise<{ v4: string[]; v6: string[] }> {
   const read = async (family: '-4' | '-6') => {
     try {
-      const output = await exec(
-        `ip ${family} route show dev ${interfaceName}`,
-        { log: false }
-      );
-
-      return (
-        output
-          .split('\n')
-          .map((line) => line.trim().split(/\s+/)[0] ?? '')
-          .filter((prefix) => prefix.includes('/'))
-          // Link-local is never a routing target worth preserving.
-          .filter((prefix) => !prefix.toLowerCase().startsWith('fe80:'))
+      return parseSubnets(
+        await ipJson(`${family} route show dev ${interfaceName}`)
       );
     } catch {
       return [];
@@ -174,6 +211,15 @@ export async function localSubnets(
   return { v4, v6 };
 }
 
+/** The mark-selecting rules installed for one family. */
+export async function fwmarkRules(family: '-4' | '-6'): Promise<FwmarkRule[]> {
+  try {
+    return parseFwmarkRules(await ipJson(`${family} rule list`));
+  } catch {
+    return [];
+  }
+}
+
 /** What a WireGuard link reports about its peers. */
 export type WireGuardPeers = {
   /** Keepalive interval, in seconds, of each peer configured to keep the tunnel alive by itself. */
@@ -182,7 +228,7 @@ export type WireGuardPeers = {
   handshakes: Map<string, number>;
 };
 
-type WireGuardTool = 'wg' | 'awg';
+export type WireGuardTool = 'wg' | 'awg';
 
 // Which toolset answers for each link: an AmneziaWG interface answers `awg`
 // and refuses `wg`, a plain one the other way round.
@@ -316,53 +362,76 @@ export function handshakeStale(age: number | null) {
   return age !== null && age > HANDSHAKE_STALE_SECONDS;
 }
 
+/** A WireGuard public or preshared key: 32 bytes of base64. */
+const KEY = /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/;
+
+/** Endpoints and allowed-IP lists as a dump prints them: addresses, ports, prefixes. */
+const PEER_VALUE = /^[0-9A-Za-z.:[\]/,%-]+$/;
+
+/**
+ * The command that replaces one peer with an identical one. Removal and
+ * re-addition go in a single `set`, which the kernel applies in order, so the
+ * peer is never left missing. A preshared key is piped from the link's own
+ * listing straight into the tool, so it never reaches a command line, a file
+ * or this process. Values are checked first: they came from another program's
+ * interface and end up in a shell.
+ */
+export function replacePeerCommand(
+  tool: WireGuardTool,
+  name: string,
+  peer: DumpPeer
+) {
+  const values = [peer.endpoint, peer.allowedIps].filter(
+    (value): value is string => value !== null
+  );
+  if (!KEY.test(peer.key) || values.some((value) => !PEER_VALUE.test(value))) {
+    throw new Error(`peer ${peer.key} on ${name} has an unexpected value`);
+  }
+
+  const settings = [
+    peer.endpoint && `endpoint ${peer.endpoint}`,
+    peer.allowedIps && `allowed-ips ${peer.allowedIps}`,
+    peer.keepalive !== null && `persistent-keepalive ${peer.keepalive}`,
+  ].filter(Boolean);
+
+  const set = [
+    `${tool} set ${name} peer ${peer.key} remove peer ${peer.key}`,
+    ...settings,
+  ].join(' ');
+
+  return peer.preshared
+    ? {
+        command: `${tool} show ${name} preshared-keys | awk -v k='${peer.key}' '$1 == k { print $2 }' | ${set} preshared-key /dev/stdin`,
+        shown: `${set} preshared-key <from listing>`,
+      }
+    : { command: set, shown: set };
+}
+
 /**
  * Make a WireGuard link handshake anew without taking it down: each peer is
- * removed and put back as it was. A removed peer takes its sessions with it,
- * and the new one handshakes at once if it has keepalive (WireGuard sends one
- * when keepalive is set on a fresh peer) or with its next packet otherwise.
- * The link's addresses, socket and routes are untouched. Setting the private
- * key to its own value, the obvious alternative, is a no-op in the kernel.
+ * replaced by an identical one. A new peer has no session, and handshakes at
+ * once if it has keepalive (WireGuard sends one when keepalive is set on a
+ * fresh peer) or with its next packet otherwise. The link's addresses, socket
+ * and routes are untouched. Setting the private key to its own value, the
+ * obvious alternative, is a no-op in the kernel.
  *
- * A preshared key goes through a file the tool reads, never a command line.
  * Rejects when the link is not WireGuard, is gone, or a peer could not be
- * put back (tried twice, since that is worse than a stuck session).
+ * replaced; a failed replacement leaves that peer as it was.
  */
 export async function rehandshake(name: string): Promise<void> {
   const found = await dump(name);
   if (!found) {
     throw new Error(`${name} is not a WireGuard link`);
   }
-  const { tool } = found;
 
   for (const peer of dumpPeers(found.output)) {
-    const settings = [
-      peer.endpoint && `endpoint ${peer.endpoint}`,
-      peer.allowedIps && `allowed-ips ${peer.allowedIps}`,
-      peer.keepalive !== null && `persistent-keepalive ${peer.keepalive}`,
-    ]
-      .filter(Boolean)
-      .join(' ');
-
-    // The preshared key is read out before the peer goes, into a file only
-    // this process can read.
-    const readd = peer.preshared
-      ? `umask 077 && psk=$(mktemp) && ${tool} show ${name} preshared-keys | awk -v k='${peer.key}' '$1 == k { print $2 }' > "$psk" && ${tool} set ${name} peer ${peer.key} remove && ${tool} set ${name} peer ${peer.key} ${settings} preshared-key "$psk"; status=$?; rm -f "$psk"; exit $status`
-      : `${tool} set ${name} peer ${peer.key} remove && ${tool} set ${name} peer ${peer.key} ${settings}`;
-    const shown = `${tool} set ${name} peer ${peer.key} remove && ${tool} set ${name} peer ${peer.key} ${settings}${peer.preshared ? ' preshared-key <file>' : ''}`;
-
+    const { command, shown } = replacePeerCommand(found.tool, name, peer);
     try {
-      await exec(readd, { log: shown });
-    } catch {
-      // The removal may have gone through and the re-add not; a second
-      // attempt re-adds an absent peer just the same.
-      try {
-        await exec(readd, { log: shown });
-      } catch (error) {
-        throw new Error(`peer ${peer.key} could not be put back on ${name}`, {
-          cause: error,
-        });
-      }
+      await exec(command, { log: shown });
+    } catch (error) {
+      throw new Error(`peer ${peer.key} could not be replaced on ${name}`, {
+        cause: error,
+      });
     }
   }
 }

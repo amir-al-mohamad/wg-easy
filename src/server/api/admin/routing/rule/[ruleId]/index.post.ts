@@ -5,8 +5,8 @@ import { defineAuthenticatedEventHandler } from '#server/utils/handler';
 import { validateZod, getValidatedRouterParams } from '#server/http/validation';
 import {
   RoutingRuleGetSchema,
-  RoutingRuleUpdateSchema,
-} from '#db/repositories/routingRule/types';
+  RoutingRuleSchema,
+} from '#shared/contracts/routingRule';
 
 export default defineAuthenticatedEventHandler(async ({ event, user }) => {
   const { ruleId } = await getValidatedRouterParams(
@@ -16,7 +16,7 @@ export default defineAuthenticatedEventHandler(async ({ event, user }) => {
 
   const data = await readValidatedBody(
     event,
-    validateZod(RoutingRuleUpdateSchema, event)
+    validateZod(RoutingRuleSchema, event)
   );
 
   await routing.updateRule(user, ruleId, data);

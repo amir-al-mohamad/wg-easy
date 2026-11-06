@@ -1,8 +1,11 @@
 import { asc, eq } from 'drizzle-orm';
 
 import { gateway } from './schema';
-import type { GatewayCreateType, GatewayUpdateType } from './types';
 
+import type {
+  GatewayCreateType,
+  GatewayUpdateType,
+} from '#shared/contracts/gateway';
 import { allocate, hasCapacity } from '#server/utils/routing/marks';
 import { routingConfig } from '#db/repositories/routingConfig/schema';
 import { routingRule } from '#db/repositories/routingRule/schema';

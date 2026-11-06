@@ -19,6 +19,12 @@ type App = {
   restart: () => Promise<string>;
   connectClient: (configuration: string) => Promise<void>;
   pingFromClient: (address: string) => Promise<boolean>;
+  /** The server's upstream gateway: outside the tunnel, and answers ping. */
+  uplinkGateway: () => Promise<string>;
+  /** Ping continuously through the tunnel, as one long-lived connection. */
+  startPingFromClient: (address: string) => Promise<void>;
+  /** Replies the continuous ping has received so far. */
+  pingReplies: () => Promise<number>;
 };
 
 export const credentials = {
@@ -123,6 +129,40 @@ wg-quick up wg0`,
               return false;
             }
           },
+          uplinkGateway: async () => {
+            const [route] = JSON.parse(
+              await compose([
+                'exec',
+                '-T',
+                'wg-easy',
+                'ip',
+                '-j',
+                '-4',
+                'route',
+                'show',
+                'default',
+              ])
+            ) as { gateway: string }[];
+            return route!.gateway;
+          },
+          startPingFromClient: async (address) => {
+            await compose([
+              'exec',
+              '-d',
+              'vpn-client',
+              'sh',
+              '-c',
+              `exec ping -4 -I wg0 -i 0.2 ${address} > /tmp/ping.log 2>&1`,
+            ]);
+          },
+          pingReplies: async () =>
+            Number(
+              await execClient([
+                'sh',
+                '-c',
+                'grep -c "bytes from" /tmp/ping.log || true',
+              ])
+            ),
           restart: async () => {
             await compose(['restart', 'wg-easy']);
             await compose([

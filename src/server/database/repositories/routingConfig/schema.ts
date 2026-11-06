@@ -30,7 +30,7 @@ export const routingConfig = sqliteTable('routing_config_table', {
    * default, so an install that never uses routing has no resolver bound on
    * its tunnel address.
    */
-  dnsInterceptEnabled: int('dns_intercept_enabled', { mode: 'boolean' })
+  dnsProxyEnabled: int('dns_proxy_enabled', { mode: 'boolean' })
     .notNull()
     .default(false),
 

@@ -35,38 +35,19 @@
 /**
  * The clients this one is isolated from. Fetched here rather than passed in:
  * the client page has no other reason to know about other clients, and the
- * list endpoint already limits a non-admin to their own.
+ * endpoint already limits a non-admin to their own.
  */
 const props = defineProps<{ clientId: number }>();
 
 const data = defineModel<number[]>({ required: true });
 
-// The list endpoint pages its results; isolation needs every client.
-const { data: clients } = useAsyncData(
-  'isolation-clients',
-  async () => {
-    const all = [];
-    for (let page = 1; ; page++) {
-      const result = await $fetch('/api/client', {
-        query: { page, pageSize: 100 },
-      });
-      all.push(...result.clients);
-      if (!result.clients.length || all.length >= result.total) {
-        return all;
-      }
-    }
-  },
-  { lazy: true }
-);
+const { data: clients } = useFetch('/api/client/names', {
+  method: 'get',
+  lazy: true,
+});
 
 const others = computed(() =>
-  (clients.value ?? [])
-    .filter((client) => client.id !== props.clientId)
-    .map((client) => ({
-      id: client.id,
-      name: client.name,
-      ipv4Address: client.ipv4Address,
-    }))
+  (clients.value ?? []).filter((client) => client.id !== props.clientId)
 );
 
 function toggle(id: number, checked: boolean) {

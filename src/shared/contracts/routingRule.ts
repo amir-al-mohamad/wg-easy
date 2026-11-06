@@ -1,0 +1,113 @@
+import z from 'zod';
+
+import {
+  controlStringRefine,
+  EnabledSchema,
+  safeStringRefine,
+  t,
+} from '#shared/contracts/validation';
+import { canonical } from '#shared/utils/address';
+import { parsePattern } from '#shared/utils/pattern';
+import { routingActions } from '#shared/utils/routing';
+
+export const RoutingActionSchema = z.enum(routingActions, {
+  message: t('validation.routingRule.action'),
+});
+
+const NameSchema = z
+  .string({ message: t('validation.routingRule.name') })
+  .min(1, { message: t('validation.routingRule.name') })
+  .max(128, { message: t('validation.routingRule.name') })
+  .pipe(safeStringRefine)
+  .pipe(controlStringRefine);
+
+const DescriptionSchema = z
+  .string({ message: t('validation.routingRule.description') })
+  .max(512, { message: t('validation.routingRule.description') })
+  .pipe(safeStringRefine)
+  .pipe(controlStringRefine);
+
+/**
+ * Patterns are stored normalized (lowercased, trimmed, root dot removed), so
+ * the same name typed two ways cannot produce two rules that look different
+ * but behave identically.
+ */
+const PatternsSchema = z.array(
+  z
+    .string({ message: t('validation.routingRule.pattern') })
+    .transform((value) => parsePattern(value))
+    .refine((parsed) => parsed !== null, {
+      message: t('validation.routingRule.patternInvalid'),
+    })
+    .transform((parsed) => parsed!.pattern),
+  { message: t('validation.routingRule.patterns') }
+);
+
+/**
+ * Addresses are stored in canonical form (host bits cleared, host prefixes
+ * dropped, IPv6 compressed), so a value compares equal to what the kernel
+ * prints back for it. `0.0.0.0/0` and `::/0` are accepted with their usual
+ * meaning of "every destination" and matched without an address set, because
+ * `hash:net` rejects a zero-length prefix on many kernels.
+ */
+const AddressesSchema = z.array(
+  z
+    .string({ message: t('validation.routingRule.address') })
+    .transform((value) => canonical(value))
+    .refine((entry) => entry !== null, {
+      message: t('validation.routingRule.addressInvalid'),
+    })
+    .transform((entry) => entry!.address),
+  { message: t('validation.routingRule.addresses') }
+);
+
+const ClientIdsSchema = z.array(
+  z
+    .number({ message: t('validation.routingRule.clients') })
+    .int()
+    .positive(),
+  { message: t('validation.routingRule.clients') }
+);
+
+const RoutingRuleBaseSchema = z.object({
+  name: NameSchema,
+  description: DescriptionSchema.default(''),
+  enabled: EnabledSchema.default(true),
+  action: RoutingActionSchema,
+  /** Required when `action` is `gateway`, ignored otherwise. */
+  gatewayId: z.number().int().positive().nullable().default(null),
+  patterns: PatternsSchema.default([]),
+  addresses: AddressesSchema.default([]),
+  /** Empty means the rule applies to every client. */
+  clientIds: ClientIdsSchema.default([]),
+  autoResolve: EnabledSchema.default(false),
+});
+
+/**
+ * A rule that matches nothing would sit in the list looking active while doing
+ * nothing at all, so it is rejected rather than saved.
+ */
+export const RoutingRuleSchema = RoutingRuleBaseSchema.refine(
+  (rule) => rule.action !== 'gateway' || rule.gatewayId !== null,
+  {
+    message: t('validation.routingRule.gatewayRequired'),
+    path: ['gatewayId'],
+  }
+).refine((rule) => rule.patterns.length > 0 || rule.addresses.length > 0, {
+  message: t('validation.routingRule.empty'),
+  path: ['patterns'],
+});
+
+export type RoutingRuleInputType = z.infer<typeof RoutingRuleSchema>;
+
+export const RoutingRuleReorderSchema = z.array(
+  z
+    .number({ message: t('validation.routingRule.order') })
+    .int()
+    .positive(),
+  { message: t('validation.routingRule.order') }
+);
+
+const ruleId = z.coerce.number({ message: t('validation.routingRule.id') });
+
+export const RoutingRuleGetSchema = z.object({ ruleId });

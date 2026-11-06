@@ -2,7 +2,7 @@ import { Resolver } from 'node:dns/promises';
 
 import { createDebug } from 'obug';
 
-import { addAddress } from './ipset';
+import { changeSets, type SetChange } from './ipset';
 
 import type { ID } from '#shared/contracts/validation';
 import { resolvableDomains } from '#shared/utils/pattern';
@@ -65,29 +65,35 @@ export async function resolveRule(
   );
 
   const failed: string[] = [];
-  let added = 0;
+  const changes: SetChange[] = [];
 
-  for (const domain of domains) {
-    const [v4, v6] = await Promise.all([
-      resolver.resolve4(domain, { ttl: true }).catch(() => []),
-      resolver.resolve6(domain, { ttl: true }).catch(() => []),
-    ]);
+  await Promise.all(
+    [...domains].map(async (domain) => {
+      const [v4, v6] = await Promise.all([
+        resolver.resolve4(domain, { ttl: true }).catch(() => []),
+        resolver.resolve6(domain, { ttl: true }).catch(() => []),
+      ]);
 
-    const records = [...v4, ...v6];
-    if (records.length === 0) {
-      failed.push(domain);
-      continue;
-    }
+      const records = [...v4, ...v6];
+      if (records.length === 0) {
+        failed.push(domain);
+      }
+      for (const record of records) {
+        changes.push({
+          op: 'add',
+          ruleId,
+          address: record.address,
+          timeout: setTtl(record.ttl),
+        });
+      }
+    })
+  );
 
-    for (const record of records) {
-      await addAddress(ruleId, record.address, setTtl(record.ttl));
-      added++;
-    }
-  }
+  await changeSets(changes);
 
   if (failed.length > 0) {
     ROUTER_DEBUG(`Rule ${ruleId}: could not resolve ${failed.join(', ')}`);
   }
 
-  return { added, failed };
+  return { added: changes.length, failed: failed.sort() };
 }

@@ -102,6 +102,18 @@ export class ClientRepository {
   }
 
   /**
+   * Every client's name and address, for pickers that list other clients;
+   * only `userId`'s when given.
+   */
+  async getNames(userId?: number) {
+    return this.db.query.client.findMany({
+      where: userId === undefined ? undefined : eq(client.userId, userId),
+      columns: { id: true, name: true, ipv4Address: true },
+      orderBy: (t, { asc }) => [asc(t.name), asc(t.id)],
+    });
+  }
+
+  /**
    * Counts and pages the same filtered, permission-scoped snapshot.
    */
   async getPage(
